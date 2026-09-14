@@ -100,6 +100,8 @@ export interface FallbackParserOptions {
   timeoutMs?: number;
 }
 
+export * from './types/index';
+
 /**
  * Core type definitions for Context Builder's dynamic fan-out dampening
  * and inverse reference frequency scoring engine.
