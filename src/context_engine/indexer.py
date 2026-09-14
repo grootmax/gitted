@@ -1,14 +1,28 @@
+import os
 import time
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Set
-from .extractor import extract_entity_issue_keys, extract_issue_keys
-from .models import Ticket, PullRequest, Commit, Feature, Repository
+from .extractor import (
+    extract_entity_issue_keys,
+    extract_issue_keys,
+    parse_package_manifest,
+    extract_ast_imports,
+)
+from .models import (
+    Ticket,
+    PullRequest,
+    Commit,
+    Feature,
+    Repository,
+    PackageDependency,
+    CrossRepoPackageLink,
+)
 
 
 class GlobalTicketIndex:
     """
-    Global index mapping Jira issue keys (e.g. PAY-482) to PRs, commits, and features
-    across all registered organization repositories in PostgreSQL-backed architecture.
+    Global index mapping Jira issue keys (e.g. PAY-482) and package dependency/AST imports
+    to PRs, commits, and features across all registered organization repositories.
     """
 
     def __init__(self):
@@ -24,10 +38,29 @@ class GlobalTicketIndex:
         self.ticket_to_features: Dict[str, Set[str]] = {}
         self.feature_to_tickets: Dict[str, Set[str]] = {}
 
+        # Package & AST Import Mappings
+        self.package_to_prs: Dict[str, Set[str]] = {}
+        self.package_to_repos: Dict[str, Set[str]] = {}
+        self.repo_to_packages: Dict[str, Set[str]] = {}
+        self.package_dependencies: Dict[str, List[PackageDependency]] = {}
+        self.cross_repo_package_links: Dict[str, List[CrossRepoPackageLink]] = {}
+
     def register_repository(self, repo_id: str, name: str, organization: str = "org") -> Repository:
         repo = Repository(repo_id=repo_id, name=name, organization=organization)
         self.repositories[name] = repo
         return repo
+
+    def register_package_export(self, package_name: str, repo_name: str):
+        """
+        Registers a package export or module origin mapping to a provider repository.
+        """
+        if package_name not in self.package_to_repos:
+            self.package_to_repos[package_name] = set()
+        self.package_to_repos[package_name].add(repo_name)
+
+        if repo_name not in self.repo_to_packages:
+            self.repo_to_packages[repo_name] = set()
+        self.repo_to_packages[repo_name].add(package_name)
 
     def link_ticket_feature(self, ticket_key: str, feature_id: str, feature_name: str, description: Optional[str] = None):
         ticket_key = ticket_key.upper()
@@ -52,9 +85,10 @@ class GlobalTicketIndex:
         pr: PullRequest,
         commit_messages: Optional[List[str]] = None,
         explicit_feature_tags: Optional[List[str]] = None,
+        file_contents: Optional[Dict[str, str]] = None,
     ) -> List[str]:
         """
-        Extract issue keys from PR title, branch, and commit messages,
+        Extract issue keys, package manifest changes, and AST import specifiers from PR,
         and update the global cross-repository index.
         """
         start_time = time.perf_counter()
@@ -85,6 +119,64 @@ class GlobalTicketIndex:
                     self.features[feat_id] = Feature(feature_id=feat_id, name=feat_id.capitalize())
                 for key in extracted_keys:
                     self.link_ticket_feature(key, feat_id, self.features[feat_id].name)
+
+        # Requirement 1 & 2: Package manifest & AST import extraction
+        extracted_packages: Set[str] = set()
+        file_contents_map = file_contents or {}
+
+        for filename in pr.files:
+            content = file_contents_map.get(filename, "")
+            basename = os.path.basename(filename).lower()
+
+            # Parse manifest files
+            if basename in ("package.json", "pyproject.toml", "go.mod", "cargo.toml"):
+                if content:
+                    self_pkg, deps = parse_package_manifest(filename, content)
+                    if self_pkg:
+                        self.register_package_export(self_pkg, pr.repo_name)
+                        extracted_packages.add(self_pkg)
+                    for d in deps:
+                        extracted_packages.add(d)
+
+            # Extract AST import specifiers from source code
+            if content:
+                imports = extract_ast_imports(filename, content)
+                for imp in imports:
+                    extracted_packages.add(imp)
+
+        # Register package-to-PR and package-to-repo mappings
+        for pkg in extracted_packages:
+            if pkg not in self.package_to_prs:
+                self.package_to_prs[pkg] = set()
+            self.package_to_prs[pkg].add(pr.pr_id)
+
+            if pkg not in self.package_to_repos:
+                self.package_to_repos[pkg] = set()
+            self.package_to_repos[pkg].add(pr.repo_name)
+
+            dep = PackageDependency(
+                package_name=pkg,
+                repo_name=pr.repo_name,
+            )
+            if pkg not in self.package_dependencies:
+                self.package_dependencies[pkg] = []
+            self.package_dependencies[pkg].append(dep)
+
+            for provider_repo in list(self.package_to_repos.get(pkg, set())):
+                if provider_repo != pr.repo_name:
+                    link_id = f"{provider_repo}->{pr.repo_name}:{pkg}"
+                    link = CrossRepoPackageLink(
+                        link_id=link_id,
+                        provider_repo=provider_repo,
+                        consumer_repo=pr.repo_name,
+                        package_name=pkg,
+                        pr_id=pr.pr_id,
+                    )
+                    if pkg not in self.cross_repo_package_links:
+                        self.cross_repo_package_links[pkg] = []
+                    self.cross_repo_package_links[pkg].append(link)
+
+        pr.packages = sorted(list(extracted_packages))
 
         elapsed_ms = (time.perf_counter() - start_time) * 1000.0
         # SLA Requirement 5: Indexing overhead < 50ms
@@ -135,13 +227,44 @@ class GlobalTicketIndex:
         prs.sort(key=lambda p: p.merged_at or p.created_at)
         return prs
 
-    def get_linked_repositories(self, ticket_key: str) -> List[str]:
-        ticket_key = ticket_key.upper()
+    def get_prs_for_package(self, package_name: str) -> List[PullRequest]:
+        pr_ids = self.package_to_prs.get(package_name, set())
+        prs = [self.pull_requests[pr_id] for pr_id in pr_ids if pr_id in self.pull_requests]
+        prs.sort(key=lambda p: p.merged_at or p.created_at)
+        return prs
+
+    def get_linked_repositories(self, identifier: str) -> List[str]:
+        """
+        Resolves linked repositories across service boundaries for ticket keys,
+        package names, or AST module specifiers.
+        """
         repos = set()
-        for pr in self.get_prs_for_ticket(ticket_key):
+
+        # 1. Ticket-based lookup
+        ticket_key = identifier.upper()
+        prs = self.get_prs_for_ticket(ticket_key)
+        for pr in prs:
             repos.add(pr.repo_name)
+            for pkg in getattr(pr, "packages", []):
+                if pkg in self.package_to_repos:
+                    repos.update(self.package_to_repos[pkg])
+                if pkg in self.package_to_prs:
+                    for pr_id in self.package_to_prs[pkg]:
+                        if pr_id in self.pull_requests:
+                            repos.add(self.pull_requests[pr_id].repo_name)
+
         for commit in self.get_commits_for_ticket(ticket_key):
             repos.add(commit.repo_name)
+
+        # 2. Package-based lookup
+        for key in (identifier, identifier.lower()):
+            if key in self.package_to_repos:
+                repos.update(self.package_to_repos[key])
+            if key in self.package_to_prs:
+                for pr_id in self.package_to_prs[key]:
+                    if pr_id in self.pull_requests:
+                        repos.add(self.pull_requests[pr_id].repo_name)
+
         return sorted(list(repos))
 
 
@@ -174,7 +297,25 @@ def handle_single_repo_pr_webhook(payload: dict) -> dict:
     merged_at_str = pr_data.get("merged_at")
     merged_at = datetime.fromisoformat(merged_at_str.replace("Z", "+00:00")) if merged_at_str else None
 
-    files = [f.get("filename") for f in pr_data.get("files", []) if isinstance(f, dict)]
+    raw_files = pr_data.get("files", [])
+    files = []
+    file_contents = payload.get("file_contents", {})
+    if isinstance(file_contents, dict):
+        file_contents = dict(file_contents)
+    else:
+        file_contents = {}
+
+    for f in raw_files:
+        if isinstance(f, str):
+            files.append(f)
+        elif isinstance(f, dict):
+            fname = f.get("filename")
+            if fname:
+                files.append(fname)
+                if "content" in f:
+                    file_contents[fname] = f["content"]
+                elif "patch" in f:
+                    file_contents[fname] = f["patch"]
 
     pr_id = f"{repo_name}#{pr_number}"
     pr = PullRequest(
@@ -192,7 +333,11 @@ def handle_single_repo_pr_webhook(payload: dict) -> dict:
     )
 
     commit_messages = payload.get("commit_messages", [])
-    extracted_keys = ticket_index.index_pull_request(pr, commit_messages=commit_messages)
+    extracted_keys = ticket_index.index_pull_request(
+        pr,
+        commit_messages=commit_messages,
+        file_contents=file_contents,
+    )
 
     elapsed_ms = (time.perf_counter() - start) * 1000.0
 
