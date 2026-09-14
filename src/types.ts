@@ -101,3 +101,93 @@ export interface FallbackParserOptions {
 }
 
 export * from './types/index';
+
+export type SymbolKind = 'function' | 'class' | 'method';
+
+export interface SymbolNode {
+  id: string; // e.g., "checkout-service.ts:processRefund"
+  name: string;
+  filePath: string;
+  kind: SymbolKind;
+  fingerprint: string;
+  normalizedAST: string;
+  startLine: number;
+  endLine: number;
+  commitHash?: string;
+  exported?: boolean;
+}
+
+export type LineageEdgeType = 'MOVE' | 'RENAME' | 'EXTRACT';
+
+export interface LineageEdge {
+  sourceSymbolId: string; // Old location
+  targetSymbolId: string; // New location
+  commitHash: string;
+  confidence: number; // 0.0 to 1.0
+  type: LineageEdgeType;
+}
+
+export interface CommitRecord {
+  commitHash: string;
+  author: string;
+  date: string;
+  message: string;
+  prNumber?: number;
+}
+
+export interface PullRequestRecord {
+  prNumber: number;
+  title: string;
+  body?: string;
+  mergedAt?: string;
+  designDecisions?: string[];
+}
+
+export interface IncidentWarning {
+  id: string;
+  symbolId: string;
+  commitHash?: string;
+  prNumber?: number;
+  title: string;
+  description: string;
+  severity?: 'low' | 'medium' | 'high' | 'critical';
+  createdAt: string;
+}
+
+export interface SymbolHistoryResult {
+  symbolId: string;
+  currentLocation: {
+    filePath: string;
+    symbolName: string;
+  };
+  lineageChain: Array<{
+    symbolId: string;
+    filePath: string;
+    symbolName: string;
+    commitHash?: string;
+  }>;
+  commits: CommitRecord[];
+  pullRequests: PullRequestRecord[];
+  incidentWarnings: IncidentWarning[];
+}
+
+export interface ContextualWarningResult {
+  symbolId: string;
+  filePath: string;
+  symbolName: string;
+  warnings: Array<{
+    warningId: string;
+    title: string;
+    description: string;
+    severity: string;
+    sourceSymbolId: string;
+    sourceFilePath: string;
+    prNumber?: number;
+    commitHash?: string;
+  }>;
+}
+
+export interface FingerprintMatchResult {
+  similarity: number;
+  matched: boolean;
+}

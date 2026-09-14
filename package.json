@@ -1,8 +1,9 @@
 {
   "name": "gitted",
   "version": "1.0.0",
-  "description": "VS Code extension with off-thread background indexing daemon and local SQLite cache",
-  "main": "./out/extension.js",
+  "description": "Regex fallback parser, parse status indicator, Git move tracking, AST symbol fingerprinting, and background indexing daemon",
+  "main": "./out/index.js",
+  "types": "./out/index.d.ts",
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
@@ -18,7 +19,14 @@
     "context",
     "sqlite",
     "ast",
-    "git"
+    "git",
+    "static-analysis",
+    "code-graph",
+    "ast-parser",
+    "fallback-parser",
+    "context-builder",
+    "git-move-tracking",
+    "ast-fingerprinting"
   ],
   "author": "",
   "license": "MIT",

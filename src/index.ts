@@ -4,3 +4,7 @@ export * from './parsers/regexFallbackParser.js';
 export * from './pipeline/staticAnalysisPipeline.js';
 export * from './graph/codeGraph.js';
 export * from './ui/contextBuilderViews.js';
+export * from './ast/fingerprinter.js';
+export * from './graph/graphStore.js';
+export * from './git/moveAnalyzer.js';
+export * from './context/contextBuilder.js';
