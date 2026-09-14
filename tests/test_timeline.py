@@ -1,9 +1,12 @@
+import json
 from datetime import datetime, timezone
 import pytest
 from src.context_engine.indexer import GlobalTicketIndex
 from src.context_engine.models import PullRequest
 from src.web_app.timeline import FeatureTimelineGenerator
 from src.web_app.app import WebAppService
+from gitted.models import PRIntent
+from gitted.timeline import append_to_timeline
 
 
 def test_feature_timeline_generator():
@@ -124,3 +127,29 @@ def test_web_app_service_endpoints():
     res = svc.handle_ticket_timeline_request("PAY-482")
     assert res["status"] == "success"
     assert res["data"]["total_prs"] == 1
+
+
+def test_append_to_timeline_json(tmp_path):
+    timeline_file = tmp_path / "timeline.json"
+    intent = PRIntent(
+        reason="PAY-482: Add partial refund support",
+        change_type="Feature",
+        affected_areas=["Payments", "Refunds"],
+        ticket_references=["PAY-482"]
+    )
+
+    entry = append_to_timeline(
+        timeline_path=timeline_file,
+        intent=intent,
+        pr_number=101,
+        commit_sha="abc1234"
+    )
+
+    assert timeline_file.exists()
+    data = json.loads(timeline_file.read_text(encoding="utf-8"))
+    assert len(data["entries"]) == 1
+    recorded = data["entries"][0]
+    assert recorded["change_type"] == "Feature"
+    assert recorded["affected_areas"] == ["Payments", "Refunds"]
+    assert recorded["pr_number"] == 101
+    assert recorded["commit_sha"] == "abc1234"

@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "timestamp": "2026-09-14T15:56:44.698609+00:00",
+      "pr_number": 42,
+      "commit_sha": "abc123def",
+      "change_type": "Feature",
+      "affected_areas": [
+        "General"
+      ],
+      "reason": "[PAY-482] Ticket PAY-482 - Automated rationale extracted for ticket PAY-482 | Commits: feat(refunds): add partial refund endpoint",
+      "ticket_references": [
+        "PAY-482"
+      ],
+      "manual_override": true
+    }
+  ]
+}

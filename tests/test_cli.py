@@ -1,8 +1,10 @@
+import json
 import os
 import sys
 import tempfile
 from unittest.mock import patch
 import pytest
+from pathlib import Path
 from gitted.cli import main
 
 
@@ -94,3 +96,40 @@ Body content here
         assert "# ADR-001: Server Setup" in captured.out
         assert "**Status:** [Active]" in captured.out
         assert "src/app.py#run_server" in captured.out
+
+
+def test_cli_init(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    sys_argv = ["gitted", "init"]
+    monkeypatch.setattr("sys.argv", sys_argv)
+
+    main()
+    captured = capsys.readouterr()
+    assert "Created" in captured.out or "already exists" in captured.out
+    assert (tmp_path / ".contextbuilder" / "features.yml").exists()
+
+
+def test_cli_analyze_json(tmp_path, monkeypatch, capsys):
+    features_yml = tmp_path / "features.yml"
+    features_yml.write_text("""
+features:
+  - name: Payments
+    paths: ["services/payment/**"]
+""", encoding="utf-8")
+
+    sys_argv = [
+        "gitted", "analyze",
+        "--branch", "feature/PAY-482",
+        "--commit-msg", "feat: add payment support",
+        "--file", "services/payment/pay.py",
+        "--features-file", str(features_yml),
+        "--json"
+    ]
+    monkeypatch.setattr("sys.argv", sys_argv)
+
+    main()
+    captured = capsys.readouterr()
+    data = json.loads(captured.out)
+    assert data["change_type"] == "Feature"
+    assert "Payments" in data["affected_areas"]
+    assert "PAY-482" in data["ticket_references"]

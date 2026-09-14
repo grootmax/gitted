@@ -1,5 +1,5 @@
 """
-Data models for ADRs, Code Anchors, and Lifecycle Statuses.
+Data models for ADRs, Code Anchors, Lifecycle Statuses, Ticket Metadata, and PR Intent.
 """
 
 from dataclasses import dataclass, field
@@ -22,7 +22,6 @@ class ADRStatus(str, Enum):
             if member.value.lower() == str_val:
                 return member
         return cls.ACCEPTED
-
 
 
 @dataclass
@@ -111,3 +110,56 @@ class ADR:
         elif eff_status == ADRStatus.STALE:
             return "Stale Anchor"
         return eff_status.value
+
+
+@dataclass
+class TicketData:
+    key: str
+    title: str
+    description: str = ""
+    issue_type: str = "Task"
+    url: Optional[str] = None
+    source: str = "jira"  # 'jira' or 'github'
+
+
+@dataclass
+class CommitData:
+    hash: str = ""
+    raw_message: str = ""
+    commit_type: Optional[str] = None  # e.g. 'feat', 'fix', 'refactor'
+    scope: Optional[str] = None
+    description: str = ""
+    body: str = ""
+    is_breaking: bool = False
+
+
+@dataclass
+class PRIntent:
+    reason: str
+    change_type: str
+    affected_areas: List[str] = field(default_factory=list)
+    ticket_references: List[str] = field(default_factory=list)
+    raw_commits: List[CommitData] = field(default_factory=list)
+    tickets: List[TicketData] = field(default_factory=list)
+    manual_override: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "reason": self.reason,
+            "change_type": self.change_type,
+            "affected_areas": self.affected_areas,
+            "ticket_references": self.ticket_references,
+            "manual_override": self.manual_override,
+        }
+
+
+@dataclass
+class FeatureRule:
+    name: str
+    paths: List[str]
+    description: str = ""
+
+
+@dataclass
+class FeatureRegistry:
+    features: List[FeatureRule] = field(default_factory=list)
