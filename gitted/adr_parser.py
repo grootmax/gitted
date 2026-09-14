@@ -101,7 +101,7 @@ class ADRParser:
         body = content
 
         # Check for YAML frontmatter between ---
-        frontmatter_match = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)$", content, re.DOTALL)
+        frontmatter_match = re.match(r"^\s*---\s*\n(.*?)\n\s*---\s*\n(.*)$", content, re.DOTALL)
         if frontmatter_match:
             yaml_block = frontmatter_match.group(1)
             body = frontmatter_match.group(2)
@@ -120,7 +120,6 @@ class ADRParser:
 
         return metadata, body
 
-
     @staticmethod
     def _parse_simple_yaml(yaml_text: str) -> Dict[str, Any]:
         """
@@ -129,8 +128,10 @@ class ADRParser:
         data: Dict[str, Any] = {}
         lines = yaml_text.splitlines()
         current_key = None
+        last_item_indent = 0
 
         for line in lines:
+            raw_indent = len(line) - len(line.lstrip())
             line_str = line.strip()
             if not line_str or line_str.startswith("#"):
                 continue
@@ -148,6 +149,7 @@ class ADRParser:
                     data[current_key].append({item_key: item_val})
                 else:
                     data[current_key].append(val.strip("\"'"))
+                last_item_indent = raw_indent
                 continue
 
             # Key-value pair
@@ -155,11 +157,17 @@ class ADRParser:
                 parts = line_str.split(":", 1)
                 key = parts[0].strip()
                 val = parts[1].strip().strip("\"'")
-                current_key = key
-                if val:
-                    data[key] = val
+                if (current_key in data and isinstance(data[current_key], list)
+                        and data[current_key] and isinstance(data[current_key][-1], dict)
+                        and raw_indent > last_item_indent):
+                    data[current_key][-1][key] = val
                 else:
-                    data[key] = []
+                    current_key = key
+                    last_item_indent = raw_indent
+                    if val:
+                        data[key] = val
+                    else:
+                        data[key] = []
 
         return data
 

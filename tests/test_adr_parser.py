@@ -64,3 +64,23 @@ def test_parse_directory():
         assert len(adrs) == 2
         ids = {a.id for a in adrs}
         assert ids == {"ADR-001", "ADR-002"}
+
+
+def test_parse_simple_yaml_fallback():
+    yaml_text = """
+id: ADR-082
+title: Payment Gateway Interface Standard
+status: Accepted
+anchors:
+  - file: src/payment.py
+    symbol: PaymentGateway
+  - src/checkout.py#process_order
+"""
+    data = ADRParser._parse_simple_yaml(yaml_text)
+    assert data["id"] == "ADR-082"
+    assert data["title"] == "Payment Gateway Interface Standard"
+    assert data["status"] == "Accepted"
+    assert len(data["anchors"]) == 2
+    assert data["anchors"][0] == {"file": "src/payment.py", "symbol": "PaymentGateway"}
+    assert data["anchors"][1] == "src/checkout.py#process_order"
+
