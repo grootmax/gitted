@@ -1,0 +1,26 @@
+{
+  "name": "gitted",
+  "version": "1.0.0",
+  "description": "Regex fallback parser and parse status indicator for Code Graph and Context Builder",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "static-analysis",
+    "code-graph",
+    "ast-parser",
+    "fallback-parser",
+    "context-builder"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.1"
+  }
+}
