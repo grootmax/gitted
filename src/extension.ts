@@ -62,10 +62,11 @@ export class GittedExtension {
 
     const filePath = editor.document.fileName;
     const startTime = performance.now();
+    const currentBranch = this.backgroundIndexer.getCurrentBranch();
 
     // STRICT GUARDRAIL CHECK: Zero synchronous child process executions or AST parsing
     // Only query SQLite cache
-    let cachedContext = this.sqliteCache.getFileContext(filePath);
+    let cachedContext = this.sqliteCache.getFileContext(filePath, currentBranch);
 
     // If not in cache yet, enqueue file for background indexing asynchronously
     if (!cachedContext) {
@@ -74,6 +75,7 @@ export class GittedExtension {
       // Return instant lightweight fallback context without blocking main thread
       cachedContext = {
         filePath,
+        branch: currentBranch,
         prHistory: [],
         commitHistory: [],
         relatedTests: [],
