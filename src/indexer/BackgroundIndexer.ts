@@ -22,6 +22,7 @@ export class BackgroundIndexer {
   private sqliteCache: SqliteCache;
   private taskQueue: TaskQueue;
   private watchers: WorkspaceWatchers | null = null;
+  private currentBranch: string = 'main';
 
   constructor(options: BackgroundIndexerOptions) {
     this.workspaceRoot = options.workspaceRoot;
@@ -48,12 +49,19 @@ export class BackgroundIndexer {
     }
   }
 
+  public getCurrentBranch(): string {
+    return this.currentBranch;
+  }
+
   public async start(): Promise<void> {
     if (this.watchers) {
       this.watchers.start();
     }
     // Update branch metadata asynchronously
     const gitMeta = await getCurrentGitBranchAsync(this.workspaceRoot);
+    if (gitMeta.branch) {
+      this.currentBranch = gitMeta.branch;
+    }
     this.sqliteCache.upsertGitMetadata(gitMeta);
   }
 
@@ -84,8 +92,9 @@ export class BackgroundIndexer {
 
       const contentHash = crypto.createHash('md5').update(fileContent).digest('hex');
 
-      // Check if file is unchanged based on content hash and already in cache
-      const existingContext = this.sqliteCache.getFileContext(filePath);
+      // Check if file is unchanged based on content hash and already in cache for current branch
+      const branch = this.currentBranch || 'main';
+      const existingContext = this.sqliteCache.getFileContext(filePath, branch);
       if (existingContext && existingContext.contentHash === contentHash && item.priority !== 'high') {
         return; // Cache hit, no re-indexing needed
       }
@@ -98,8 +107,11 @@ export class BackgroundIndexer {
         mapRelatedTestsAsync(filePath, this.workspaceRoot),
       ]);
 
+      const activeBranch = gitResult.currentBranch || branch;
+
       const context: FileContext = {
         filePath,
+        branch: activeBranch,
         featureOwnership: astResult.featureOwnership,
         prHistory: gitResult.prHistory,
         commitHistory: gitResult.commitHistory,
@@ -122,12 +134,18 @@ export class BackgroundIndexer {
   }
 
   private handleFileDeleted(filePath: string): void {
-    this.sqliteCache.removeFileContext(filePath);
+    this.sqliteCache.removeFileContext(filePath, this.currentBranch);
   }
 
   private async handleBranchSwitched(branchName: string): Promise<void> {
+    this.currentBranch = branchName || 'main';
     const gitMeta = await getCurrentGitBranchAsync(this.workspaceRoot);
-    this.sqliteCache.upsertGitMetadata(gitMeta);
+    const effectiveBranch = (gitMeta.branch && gitMeta.branch !== 'main') ? gitMeta.branch : this.currentBranch;
+    this.currentBranch = effectiveBranch;
+    this.sqliteCache.upsertGitMetadata({
+      ...gitMeta,
+      branch: effectiveBranch,
+    });
 
     // Scan workspace files and enqueue re-index at low priority
     this.scanWorkspaceAndQueue('low');
