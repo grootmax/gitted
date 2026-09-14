@@ -11,7 +11,7 @@ import {
   ADRWarning,
   ASTNodeSummary,
   DbSchemaContext,
-} from '../types';
+} from '../types/index';
 
 export interface SqliteCacheOptions {
   dbPath?: string;
