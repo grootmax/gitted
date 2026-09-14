@@ -1,26 +1,35 @@
 {
   "name": "gitted",
   "version": "1.0.0",
-  "description": "Regex fallback parser and parse status indicator for Code Graph and Context Builder",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "description": "VS Code extension with off-thread background indexing daemon and local SQLite cache",
+  "main": "./out/extension.js",
   "scripts": {
     "build": "tsc",
+    "watch": "tsc -w",
     "test": "vitest run",
     "test:watch": "vitest"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/grootmax/gitted.git"
+  },
   "keywords": [
-    "static-analysis",
-    "code-graph",
-    "ast-parser",
-    "fallback-parser",
-    "context-builder"
+    "vscode",
+    "context",
+    "sqlite",
+    "ast",
+    "git"
   ],
   "author": "",
   "license": "MIT",
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "chokidar": "^4.0.3",
+    "typescript": "5.7.3"
+  },
   "devDependencies": {
-    "@types/node": "^20.11.0",
-    "typescript": "^5.3.3",
-    "vitest": "^1.2.1"
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.13.10",
+    "vitest": "^3.0.7"
   }
 }
