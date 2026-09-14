@@ -1,0 +1,18 @@
+# Context Builder Features Registry
+features:
+  - name: Payments
+    description: Core payment processing
+    paths:
+      - "services/payment/**"
+      - "src/payments/**"
+
+  - name: Refunds
+    description: Partial and full refund workflows
+    paths:
+      - "services/refund/**"
+      - "src/refunds/**"
+
+  - name: Core
+    description: Core library modules
+    paths:
+      - "src/gitted/**"
