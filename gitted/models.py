@@ -142,15 +142,22 @@ class PRIntent:
     raw_commits: List[CommitData] = field(default_factory=list)
     tickets: List[TicketData] = field(default_factory=list)
     manual_override: bool = False
+    db_schema_context: Dict[str, Any] = field(default_factory=dict)
+    db_schema_changes: List[Dict[str, Any]] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        res = {
             "reason": self.reason,
             "change_type": self.change_type,
             "affected_areas": self.affected_areas,
             "ticket_references": self.ticket_references,
             "manual_override": self.manual_override,
         }
+        if self.db_schema_context:
+            res["db_schema_context"] = self.db_schema_context
+        if self.db_schema_changes:
+            res["db_schema_changes"] = self.db_schema_changes
+        return res
 
 
 @dataclass

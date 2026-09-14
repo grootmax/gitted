@@ -2,14 +2,18 @@
 Context Builder for developer warning views and ADR detail views.
 """
 
-from typing import List, Dict, Any, Optional
+import json
+import yaml
+from pathlib import Path
+from typing import List, Dict, Any, Optional, Union
 from .models import ADR, ADRStatus, CodeAnchor
 from .ast_indexer import ASTIndexer
 
 
 class ContextBuilder:
     """
-    Builds context warnings and "Before You Change This" panels for developers.
+    Builds context warnings and "Before You Change This" panels for developers,
+    along with database schema lineage tracking across feature timelines.
     """
 
     def __init__(self, adrs: List[ADR], indexer: Optional[ASTIndexer] = None):
@@ -138,3 +142,60 @@ class ContextBuilder:
             lines.append(adr.content.strip())
 
         return "\n".join(lines)
+
+    @staticmethod
+    def get_schema_lineage(table_name: str, timeline_path: Union[str, Path] = ".contextbuilder/timeline.json") -> List[Dict[str, Any]]:
+        """
+        Retrieves database schema evolution timeline and change history for a table across feature timeline records.
+        """
+        clean_tbl = table_name.lower().strip()
+        path = Path(timeline_path) if isinstance(timeline_path, (str, Path)) else None
+        
+        events: List[Dict[str, Any]] = []
+        if not path or not path.exists():
+            return events
+
+        try:
+            if path.suffix in [".yml", ".yaml"]:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = yaml.safe_load(f) or {}
+            else:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f) or {}
+            
+            entries = data.get("entries", [])
+            for entry in entries:
+                changes = entry.get("db_schema_changes", [])
+                context = entry.get("db_schema_context", {})
+                
+                table_matched = False
+                for ch in changes:
+                    if ch.get("table", "").lower() == clean_tbl:
+                        events.append({
+                            "timestamp": entry.get("timestamp"),
+                            "pr_number": entry.get("pr_number"),
+                            "commit_sha": entry.get("commit_sha"),
+                            "operation": ch.get("operation", "ALTER"),
+                            "table": clean_tbl,
+                            "affected_areas": entry.get("affected_areas", []),
+                            "reason": entry.get("reason", "")
+                        })
+                        table_matched = True
+                        break
+                
+                if not table_matched and context:
+                    tbls = [t.lower() for t in context.get("tables", [])]
+                    if clean_tbl in tbls:
+                        events.append({
+                            "timestamp": entry.get("timestamp"),
+                            "pr_number": entry.get("pr_number"),
+                            "commit_sha": entry.get("commit_sha"),
+                            "operation": "MODIFY",
+                            "table": clean_tbl,
+                            "affected_areas": entry.get("affected_areas", []),
+                            "reason": entry.get("reason", "")
+                        })
+        except Exception:
+            pass
+
+        return events

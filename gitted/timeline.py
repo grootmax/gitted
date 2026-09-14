@@ -27,6 +27,13 @@ def append_to_timeline(
         "manual_override": intent.manual_override,
     }
 
+    db_schema_changes = getattr(intent, "db_schema_changes", None) or []
+    db_schema_context = getattr(intent, "db_schema_context", None) or {}
+    if db_schema_changes:
+        entry["db_schema_changes"] = db_schema_changes
+    if db_schema_context:
+        entry["db_schema_context"] = db_schema_context
+
     timeline_data: Dict[str, Any] = {"entries": []}
 
     if path.exists():
