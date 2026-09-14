@@ -99,3 +99,5 @@ export interface ParseResult {
 export interface FallbackParserOptions {
   timeoutMs?: number;
 }
+
+export * from './types/index';

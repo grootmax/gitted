@@ -1,7 +1,14 @@
 node_modules/
 dist/
+out/
 build/
 __pycache__/
 *.pyc
 .pytest_cache/
 *.egg-info/
+.contextbuilder/
+*.db
+*.db-wal
+*.db-shm
+*.log
+.DS_Store
