@@ -2,6 +2,9 @@ node_modules/
 dist/
 build/
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 .pytest_cache/
+.coverage
+htmlcov/
 *.egg-info/

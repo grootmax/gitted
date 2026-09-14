@@ -5,7 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "gitted"
 version = "0.1.0"
-description = "Automated AST code anchor validation and active status lifecycle engine"
+description = "Automated AST code anchor validation and ticket-based cross-repository correlation engine"
+authors = [{ name = "Gitted Team" }]
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
@@ -15,12 +16,19 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "pytest-cov",
 ]
 
 [project.scripts]
 gitted = "gitted.cli:main"
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["."]
-
+minversion = "7.0"
+addopts = "-ra -q"
+testpaths = [
+    "tests",
+]
+pythonpath = [
+    ".",
+    "src",
+]
