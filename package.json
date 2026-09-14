@@ -1,20 +1,23 @@
 {
   "name": "gitted",
   "version": "1.0.0",
-  "description": "Regex fallback parser and parse status indicator for Code Graph and Context Builder",
+  "description": "Dynamic fan-out dampening, inverse reference frequency scoring, regex fallback parser and parse status indicator for Context Builder",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "keywords": [
     "static-analysis",
     "code-graph",
     "ast-parser",
     "fallback-parser",
-    "context-builder"
+    "context-builder",
+    "scoring-engine",
+    "fan-out-dampening"
   ],
   "author": "",
   "license": "MIT",

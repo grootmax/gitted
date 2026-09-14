@@ -4,3 +4,6 @@ export * from './parsers/regexFallbackParser.js';
 export * from './pipeline/staticAnalysisPipeline.js';
 export * from './graph/codeGraph.js';
 export * from './ui/contextBuilderViews.js';
+export * from './graph.js';
+export * from './scorer.js';
+export * from './changeRadius.js';
