@@ -1,24 +1,28 @@
 {
   "name": "gitted",
   "version": "1.0.0",
-  "description": "VS Code extension with off-thread background indexing daemon and local SQLite cache",
-  "main": "./out/extension.js",
+  "description": "Dynamic fan-out dampening, inverse reference frequency scoring, regex fallback parser and parse status indicator for Context Builder",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/grootmax/gitted.git"
   },
   "keywords": [
-    "vscode",
-    "context",
-    "sqlite",
-    "ast",
-    "git"
+    "static-analysis",
+    "code-graph",
+    "ast-parser",
+    "fallback-parser",
+    "context-builder",
+    "scoring-engine",
+    "fan-out-dampening"
   ],
   "author": "",
   "license": "MIT",

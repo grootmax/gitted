@@ -9,9 +9,4 @@ __pycache__/
 .coverage
 htmlcov/
 *.egg-info/
-.contextbuilder/
-*.db
-*.db-wal
-*.db-shm
-*.log
-.DS_Store
+coverage/
