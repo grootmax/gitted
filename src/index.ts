@@ -8,3 +8,6 @@ export * from './ast/fingerprinter.js';
 export * from './graph/graphStore.js';
 export * from './git/moveAnalyzer.js';
 export * from './context/contextBuilder.js';
+export * from './graph.js';
+export * from './scorer.js';
+export * from './changeRadius.js';

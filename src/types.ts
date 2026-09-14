@@ -191,3 +191,83 @@ export interface FingerprintMatchResult {
   similarity: number;
   matched: boolean;
 }
+
+/**
+ * Core type definitions for Context Builder's dynamic fan-out dampening
+ * and inverse reference frequency scoring engine.
+ */
+
+export interface SourceFile {
+  path: string;
+  domainModule?: string;
+  tags?: string[];
+}
+
+export interface ImportRelation {
+  sourcePath: string; // The importing file
+  targetPath: string; // The imported/referenced file
+}
+
+export interface FeatureDefinition {
+  id: string;
+  name: string;
+  pathPatterns?: string[];     // Glob or prefix patterns for domain feature paths
+  explicitPaths?: string[];    // Explicitly declared feature paths (bypass shallow dampening)
+  tags?: string[];             // Explicit feature tags (e.g., 'checkout', 'payments')
+}
+
+export interface ScoringConfig {
+  basePathMatchScore?: number;        // Default: 40
+  baseImportScore?: number;           // Default: 15
+  baseExplicitTagScore?: number;      // Default: 50
+  fanOutThreshold?: number;           // Default: 10 (>10 triggers dampening)
+  shallowPathDepthThreshold?: number; // Default: 2 (depth <= 2 or matching shallow patterns is shallow)
+  shallowPathWeight?: number;         // Default: 0.25
+  shallowPathPatterns?: string[];     // Default: ['src/utils/*', 'db/migrations/*', 'utils/*', 'shared/*']
+  notificationThreshold?: number;     // Default: 30 (scores below are suppressed)
+}
+
+export interface FileGraphNode {
+  path: string;
+  domainModule?: string;
+  importingFiles: Set<string>;        // Files that import this file (in-degree references)
+  importingDomainModules: Set<string>;// Independent domain modules importing this file
+  importedFiles: Set<string>;         // Files that this file imports (out-degree)
+}
+
+export interface FeatureScoreBreakdown {
+  basePathMatch: number;
+  pathDepthWeight: number;
+  effectivePathMatchScore: number;
+  
+  baseImportScore: number;
+  fanOut: number;
+  fanOutDampeningFactor: number;
+  effectiveImportScore: number;
+
+  explicitTagScore: number;
+  bypassedDampening: boolean;
+  totalScore: number;
+}
+
+export interface FeatureAssociationScore {
+  featureId: string;
+  featureName: string;
+  score: number;
+  suppressed: boolean; // True if totalScore < notificationThreshold
+  breakdown: FeatureScoreBreakdown;
+}
+
+export interface ChangeRadiusFileResult {
+  filePath: string;
+  fanOut: number;
+  associations: FeatureAssociationScore[];
+}
+
+export interface ChangeRadiusAnalysis {
+  modifiedFiles: string[];
+  fileResults: ChangeRadiusFileResult[];
+  activeAssociations: FeatureAssociationScore[]; // High-confidence, non-suppressed feature links
+  suppressedAssociations: FeatureAssociationScore[]; // Low-confidence feature links below threshold
+  executionTimeMs: number;
+}

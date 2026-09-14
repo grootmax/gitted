@@ -1,14 +1,15 @@
 {
   "name": "gitted",
   "version": "1.0.0",
-  "description": "Regex fallback parser, parse status indicator, Git move tracking, AST symbol fingerprinting, and background indexing daemon",
-  "main": "./out/index.js",
-  "types": "./out/index.d.ts",
+  "description": "Dynamic fan-out dampening, inverse reference frequency scoring, regex fallback parser, parse status indicator, Git move tracking, and AST symbol fingerprinting",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "repository": {
     "type": "git",
@@ -25,6 +26,8 @@
     "ast-parser",
     "fallback-parser",
     "context-builder",
+    "scoring-engine",
+    "fan-out-dampening",
     "git-move-tracking",
     "ast-fingerprinting"
   ],
