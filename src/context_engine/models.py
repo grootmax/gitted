@@ -36,6 +36,7 @@ class PullRequest:
     files: List[str] = field(default_factory=list)
     commit_shas: List[str] = field(default_factory=list)
     issue_keys: List[str] = field(default_factory=list)
+    packages: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -51,6 +52,25 @@ class Ticket:
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     feature_id: Optional[str] = None
+
+
+@dataclass
+class PackageDependency:
+    package_name: str
+    repo_name: str
+    version_specifier: Optional[str] = None
+    dependency_type: str = "direct"
+    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+
+
+@dataclass
+class CrossRepoPackageLink:
+    link_id: str
+    provider_repo: str
+    consumer_repo: str
+    package_name: str
+    pr_id: Optional[str] = None
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 # PostgreSQL DDL Schema representation
@@ -115,7 +135,27 @@ CREATE TABLE IF NOT EXISTS ticket_features (
     PRIMARY KEY (ticket_key, feature_id)
 );
 
+CREATE TABLE IF NOT EXISTS package_dependencies (
+    package_name VARCHAR(255) NOT NULL,
+    repo_name VARCHAR(255) NOT NULL,
+    version_specifier VARCHAR(255),
+    dependency_type VARCHAR(64) DEFAULT 'direct',
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (package_name, repo_name)
+);
+
+CREATE TABLE IF NOT EXISTS cross_repo_package_links (
+    link_id VARCHAR(255) PRIMARY KEY,
+    provider_repo VARCHAR(255) NOT NULL,
+    consumer_repo VARCHAR(255) NOT NULL,
+    package_name VARCHAR(255) NOT NULL,
+    pr_id VARCHAR(255),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_ticket_pr_key ON ticket_pull_requests(ticket_key);
 CREATE INDEX IF NOT EXISTS idx_ticket_commit_key ON ticket_commits(ticket_key);
 CREATE INDEX IF NOT EXISTS idx_pr_repo_name ON pull_requests(repo_name);
+CREATE INDEX IF NOT EXISTS idx_package_deps_pkg ON package_dependencies(package_name);
+CREATE INDEX IF NOT EXISTS idx_cross_repo_pkg ON cross_repo_package_links(package_name);
 """
