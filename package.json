@@ -1,7 +1,7 @@
 {
   "name": "gitted",
   "version": "1.0.0",
-  "description": "Dynamic fan-out dampening, inverse reference frequency scoring, regex fallback parser and parse status indicator for Context Builder",
+  "description": "Dynamic fan-out dampening, inverse reference frequency scoring, regex fallback parser, parse status indicator, Git move tracking, and AST symbol fingerprinting",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
@@ -16,13 +16,20 @@
     "url": "git+https://github.com/grootmax/gitted.git"
   },
   "keywords": [
+    "vscode",
+    "context",
+    "sqlite",
+    "ast",
+    "git",
     "static-analysis",
     "code-graph",
     "ast-parser",
     "fallback-parser",
     "context-builder",
     "scoring-engine",
-    "fan-out-dampening"
+    "fan-out-dampening",
+    "git-move-tracking",
+    "ast-fingerprinting"
   ],
   "author": "",
   "license": "MIT",
