@@ -1,6 +1,6 @@
-# gitted — Automated AST Code Anchor Validation and Active Status Lifecycle Engine
+# gitted — Automated AST Code Anchor Validation and Ticket-Based Cross-Repository Correlation
 
-`gitted` provides automated code anchor verification and lifecycle status tracking for Architecture Decision Records (ADRs). It ensures developer warning views (e.g. "Before You Change This" panels) present active, accurate architectural rules while automatically detecting broken/stale code references when underlying codebase symbols are refactored or removed.
+`gitted` provides automated code anchor verification and lifecycle status tracking for Architecture Decision Records (ADRs), as well as ticket-based cross-repository correlation via shared issue keys across enterprise microservices.
 
 ## Features
 
@@ -11,6 +11,22 @@
 - **Developer Warning Views ("Before You Change This")**: Automatically filters out `Superseded` and `Deprecated` ADRs from primary file alerts while prominently flagging `Stale Anchor` records with distinct warning banners.
 - **ADR Detail Rendering**: Clearly displays visual status badges (`Active`, `Superseded by ADR-XXX`, `Stale Anchor`, `Deprecated`) and links to replacement ADRs.
 - **PR & CI Linting Engine**: Command-line linter to fail PR builds when linked functions/files have been removed without updating ADR status.
+- **Ticket-Based Cross-Repository Correlation**: Extracts Jira-style issue keys (`PAY-482`, `CHECKOUT-381`) from PR titles, branch names, and commit messages to correlate PRs across split repositories (`checkout-web`, `checkout-api`, `payment-service`).
+- **Global Ticket Index & Multi-Repo Timelines**: Maintains cross-repository relationship index and renders unified multi-repository Feature Timelines and VS Code context tree views.
+
+## Architecture & Overview
+
+### Core Components
+1. **AST & ADR Engine (`gitted.cli`, `gitted.lifecycle`)**: AST parser and CLI engine for ADR verification and warnings.
+2. **Context Engine (`src/context_engine`)**:
+   - Parses issue keys matching regex `[A-Z]+-\d+` from PR titles, branch names, and commit messages.
+   - Maintains global relationship index mapping issue keys to PRs, commits, and features across repositories.
+   - Processes single-repository webhooks in < 50ms.
+3. **Web App (`src/web_app`)**:
+   - Renders unified multi-repository Feature Timelines grouping changes chronologically across microservices.
+   - Formats "Cross-Repository Context" markdown blocks for GitHub App PR views.
+4. **VS Code Extension (`src/vscode_extension`)**:
+   - Displays linked cross-repository PRs and ticket context tree views in editor context.
 
 ## Quick Start & CLI Usage
 
@@ -29,29 +45,9 @@ python3 -m gitted.cli view src/payment.py --repo . --adr-dir docs/adr
 python3 -m gitted.cli detail ADR-082 --repo . --adr-dir docs/adr
 ```
 
-## ADR Markdown Format
-
-ADR documents use YAML frontmatter or header annotations:
-
-```yaml
----
-id: ADR-082
-title: Payment Gateway Interface Standard
-status: Accepted
-superseded_by: null
-anchors:
-  - file: src/payment.py
-    symbol: PaymentProcessor
-  - src/checkout.py#process_order
----
-
-# ADR-082: Payment Gateway Interface Standard
-
-This decision standardizes payment gateway calls across services.
-```
-
 ## Running Tests
 
 ```bash
 python3 -m pytest -v
 ```
+
