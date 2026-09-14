@@ -43,6 +43,7 @@ export interface ASTNodeSummary {
 export interface DbSchemaContext {
   tables: string[];
   models: string[];
+  ddlOperations?: { operation: 'CREATE' | 'ALTER' | 'DROP'; table: string }[];
 }
 
 export interface FileContext {

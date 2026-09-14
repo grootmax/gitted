@@ -8,12 +8,23 @@ import {
   ContextualWarningResult,
 } from '../types.js';
 
+export interface SchemaMigrationEvent {
+  tableName: string;
+  operation: string;
+  prNumber?: number;
+  commitHash?: string;
+  filePath?: string;
+  timestamp?: number;
+  description?: string;
+}
+
 export class GraphStore {
   private symbols: Map<string, SymbolNode> = new Map();
   private lineageEdges: LineageEdge[] = [];
   private commits: Map<string, CommitRecord> = new Map();
   private pullRequests: Map<number, PullRequestRecord> = new Map();
   private incidentWarnings: Map<string, IncidentWarning> = new Map();
+  private schemaMigrations: SchemaMigrationEvent[] = [];
 
   // Mapping symbolId -> Set of commitHashes
   private symbolCommitMap: Map<string, Set<string>> = new Map();
@@ -262,5 +273,16 @@ export class GraphStore {
       symbolName: currentSym ? currentSym.name : symbolId.split(':')[1],
       warnings: warningsList,
     };
+  }
+
+  public addSchemaMigration(event: SchemaMigrationEvent): void {
+    this.schemaMigrations.push(event);
+  }
+
+  public getSchemaLineage(tableName: string): SchemaMigrationEvent[] {
+    const cleanTbl = tableName.toLowerCase().trim();
+    return this.schemaMigrations.filter(
+      (m) => m.tableName.toLowerCase().trim() === cleanTbl
+    );
   }
 }

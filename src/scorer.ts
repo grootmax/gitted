@@ -139,30 +139,103 @@ export class ScoringEngine {
   }
 
   /**
+   * Check if schema entities or table names in dbSchemaContext match a feature's tables, name, id, or tags.
+   */
+  public hasSchemaMatch(
+    filePath: string,
+    feature: FeatureDefinition,
+    dbSchemaContext?: { tables?: string[]; models?: string[] },
+    providedTables?: string[]
+  ): boolean {
+    const candidateTables: string[] = [];
+
+    if (dbSchemaContext) {
+      if (dbSchemaContext.tables) candidateTables.push(...dbSchemaContext.tables);
+      if (dbSchemaContext.models) candidateTables.push(...dbSchemaContext.models);
+    }
+
+    if (providedTables) {
+      candidateTables.push(...providedTables);
+    }
+
+    const featureTargets = new Set<string>();
+    if (feature.tables) {
+      feature.tables.forEach(t => featureTargets.add(t.toLowerCase()));
+    }
+    // Only include feature id/name/tags if they are specific domain targets, not generic shallow path names
+    const genericShallowTerms = new Set(['utils', 'common', 'shared', 'helpers', 'utility', 'utility feature']);
+    if (!genericShallowTerms.has(feature.id.toLowerCase())) {
+      featureTargets.add(feature.id.toLowerCase());
+    }
+    if (!genericShallowTerms.has(feature.name.toLowerCase())) {
+      featureTargets.add(feature.name.toLowerCase());
+    }
+    if (feature.tags) {
+      feature.tags.forEach(t => {
+        if (!genericShallowTerms.has(t.toLowerCase())) {
+          featureTargets.add(t.toLowerCase());
+        }
+      });
+    }
+
+    if (featureTargets.size === 0) return false;
+
+    // 1. Check extracted table / ORM model entities against feature targets
+    for (const candidate of candidateTables) {
+      const lowerCand = candidate.toLowerCase();
+      for (const target of featureTargets) {
+        if (!target) continue;
+        if (lowerCand === target || lowerCand.includes(target) || target.includes(lowerCand)) {
+          return true;
+        }
+      }
+    }
+
+    // 2. Check if file is a migration / SQL file and path contains domain feature targets
+    const lowerPath = filePath.toLowerCase();
+    const isMigrationFile = lowerPath.endsWith('.sql') || lowerPath.includes('migration') || lowerPath.includes('schema');
+    if (isMigrationFile) {
+      for (const target of featureTargets) {
+        if (target && lowerPath.includes(target)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Compute feature association score for a modified file against a feature definition.
    */
   public calculateScore(
     filePath: string,
     feature: FeatureDefinition,
     graph: DependencyGraph,
-    providedTags?: string[]
+    providedTags?: string[],
+    dbSchemaContext?: { tables?: string[]; models?: string[] },
+    providedTables?: string[]
   ): FeatureAssociationScore {
     const fanOut = graph.getFanOut(filePath);
     const pathMatchInfo = this.isPathMatch(filePath, feature);
     const hasTag = this.hasExplicitTag(providedTags, feature);
+    const schemaMatch = this.hasSchemaMatch(filePath, feature, dbSchemaContext, providedTables);
     
-    // Explicit tag (+50) or explicit path declaration bypasses dampening
-    const bypassedDampening = hasTag || pathMatchInfo.isExplicit;
+    // Explicit tag (+50), explicit path declaration, or valid schema entity match bypasses dampening
+    const bypassedDampening = hasTag || pathMatchInfo.isExplicit || schemaMatch;
 
     // 1. Tag Score
     const explicitTagScore = hasTag ? this.config.baseExplicitTagScore : 0;
 
-    // 2. Path Depth Weighting
+    // 2. Path Depth Weighting & Schema Match Score Boost
     let pathDepthWeight = 1.0;
     if (this.isShallowSharedPath(filePath)) {
       pathDepthWeight = bypassedDampening ? 1.0 : this.config.shallowPathWeight;
     }
-    const basePathMatch = pathMatchInfo.matches ? this.config.basePathMatchScore : 0;
+    let basePathMatch = pathMatchInfo.matches ? this.config.basePathMatchScore : 0;
+    if (!basePathMatch && schemaMatch) {
+      basePathMatch = this.config.basePathMatchScore;
+    }
     const effectivePathMatchScore = basePathMatch * pathDepthWeight;
 
     // 3. Import Relationship Score & Fan-out Dampening

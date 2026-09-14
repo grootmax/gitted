@@ -214,6 +214,7 @@ export interface FeatureDefinition {
   pathPatterns?: string[];     // Glob or prefix patterns for domain feature paths
   explicitPaths?: string[];    // Explicitly declared feature paths (bypass shallow dampening)
   tags?: string[];             // Explicit feature tags (e.g., 'checkout', 'payments')
+  tables?: string[];           // Linked database tables / ORM entities for schema lineage matching
 }
 
 export interface ScoringConfig {
