@@ -19,11 +19,30 @@ jobs:
           node-version: 20
           cache: 'npm'
 
-      - name: Install dependencies
+      - name: Install Node dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build Node project
         run: npm run build
 
-      - name: Run tests
+      - name: Run Node tests
         run: npm run test
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pyyaml
+          pip install -e .
+
+      - name: Run Python unit tests
+        run: |
+          pytest -v
+
+      - name: Run gitted self-lint
+        run: |
+          python -m gitted.cli lint --repo . --adr-dir docs/adr || true
