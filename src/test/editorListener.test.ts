@@ -120,4 +120,51 @@ describe('Editor Change Listener & Main Thread Non-Blocking Guardrails', () => {
     expect(context).not.toBeNull();
     expect(context?.filePath).toBe(newFile);
   });
+
+  it('MUST isolate cached context per branch during branch switch', async () => {
+    const targetFile = path.join(tmpDir, 'src', 'payment-service.ts');
+    const mockEditor = {
+      document: {
+        fileName: targetFile,
+        getText: () => 'export class PaymentService {}',
+      },
+    };
+
+    // Context on initial branch (e.g., main)
+    const context1 = extension.onDidChangeActiveTextEditor(mockEditor);
+    expect(context1?.featureOwnership?.team).toBe('Billing Team');
+
+    // Simulate branch switch event
+    // @ts-ignore
+    await extension.getIndexer()['handleBranchSwitched']('feature/payment-v2');
+
+    // Query on new branch before indexing returns unindexed fallback (preventing stale context from main)
+    const contextOnNewBranch = extension.onDidChangeActiveTextEditor(mockEditor);
+    expect(contextOnNewBranch?.branch).toBe('feature/payment-v2');
+    expect(contextOnNewBranch?.featureOwnership).toBeUndefined();
+
+    // Now populate context on new branch
+    extension.getCache().upsertFileContext({
+      filePath: targetFile,
+      branch: 'feature/payment-v2',
+      featureOwnership: { team: 'New Billing Team', owner: 'bob', feature: 'V2 Payment' },
+      prHistory: [],
+      commitHistory: [],
+      relatedTests: [],
+      adrWarnings: [],
+      lastIndexedAt: Date.now(),
+    });
+
+    // Querying on new branch returns new branch context
+    const context2 = extension.onDidChangeActiveTextEditor(mockEditor);
+    expect(context2?.featureOwnership?.team).toBe('New Billing Team');
+
+    // Switch back to main
+    // @ts-ignore
+    await extension.getIndexer()['handleBranchSwitched']('main');
+
+    // Instantly retrieves original main branch context without stale data or full re-index
+    const contextRestored = extension.onDidChangeActiveTextEditor(mockEditor);
+    expect(contextRestored?.featureOwnership?.team).toBe('Billing Team');
+  });
 });

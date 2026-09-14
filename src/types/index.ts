@@ -47,6 +47,7 @@ export interface DbSchemaContext {
 
 export interface FileContext {
   filePath: string;
+  branch?: string;
   featureOwnership?: FeatureOwnership;
   prHistory: PRInfo[];
   commitHistory: CommitInfo[];

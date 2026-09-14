@@ -82,6 +82,7 @@ describe('SqliteCache Unit Tests', () => {
     for (let i = 0; i < 50; i++) {
       cache.upsertFileContext({
         filePath: `file_${i}.ts`,
+        branch: i % 2 === 0 ? 'main' : 'feature/v1',
         prHistory: [],
         commitHistory: [],
         relatedTests: [],
@@ -96,5 +97,86 @@ describe('SqliteCache Unit Tests', () => {
     const reduced = cache.enforceMaxDatabaseSize(100); // 100 bytes threshold to force purge
     expect(reduced).toBe(true);
     expect(cache.getIndexedFileCount()).toBeLessThan(50);
+  });
+
+  it('should store and isolate context per branch for the same file path', () => {
+    const filePath = path.join(tmpDir, 'src', 'payment.ts');
+
+    const mainContext: FileContext = {
+      filePath,
+      branch: 'main',
+      featureOwnership: { team: 'Core', owner: 'alice', feature: 'Legacy Billing' },
+      prHistory: [],
+      commitHistory: [],
+      relatedTests: [],
+      adrWarnings: [],
+      lastIndexedAt: Date.now(),
+    };
+
+    const featureContext: FileContext = {
+      filePath,
+      branch: 'feature/payment-v2',
+      featureOwnership: { team: 'Payments', owner: 'bob', feature: 'Stripe V2' },
+      prHistory: [],
+      commitHistory: [],
+      relatedTests: [],
+      adrWarnings: [],
+      lastIndexedAt: Date.now(),
+    };
+
+    cache.upsertFileContext(mainContext);
+    cache.upsertFileContext(featureContext);
+
+    const retrievedMain = cache.getFileContext(filePath, 'main');
+    const retrievedFeature = cache.getFileContext(filePath, 'feature/payment-v2');
+
+    expect(retrievedMain).not.toBeNull();
+    expect(retrievedMain?.featureOwnership?.feature).toBe('Legacy Billing');
+
+    expect(retrievedFeature).not.toBeNull();
+    expect(retrievedFeature?.featureOwnership?.feature).toBe('Stripe V2');
+  });
+
+  it('should migrate database from schema version 1 to version 2 seamlessly', () => {
+    const v1Dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gitted-v1-migration-'));
+    const contextDir = path.join(v1Dir, '.contextbuilder');
+    fs.mkdirSync(contextDir, { recursive: true });
+    const dbPath = path.join(contextDir, 'cache.db');
+
+    // Create a raw SQLite db with Version 1 schema
+    const Database = require('better-sqlite3');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+      INSERT INTO schema_migrations VALUES (1, 10000);
+      CREATE TABLE file_context (
+        file_path TEXT PRIMARY KEY,
+        feature_ownership TEXT,
+        pr_history TEXT,
+        commit_history TEXT,
+        related_tests TEXT,
+        adr_warnings TEXT,
+        ast_summary TEXT,
+        db_schema_context TEXT,
+        last_indexed_at INTEGER NOT NULL,
+        content_hash TEXT
+      );
+      INSERT INTO file_context (file_path, feature_ownership, last_indexed_at)
+      VALUES ('src/index.ts', '{"team":"v1-team"}', 20000);
+    `);
+    db.close();
+
+    // Opening with SqliteCache should auto-migrate to version 2
+    const cacheV2 = new SqliteCache({ workspaceRoot: v1Dir });
+    const migratedContext = cacheV2.getFileContext('src/index.ts', 'main');
+
+    expect(migratedContext).not.toBeNull();
+    expect(migratedContext?.featureOwnership?.team).toBe('v1-team');
+    expect(migratedContext?.branch).toBe('main');
+
+    cacheV2.close();
+    if (fs.existsSync(v1Dir)) {
+      fs.rmSync(v1Dir, { recursive: true, force: true });
+    }
   });
 });

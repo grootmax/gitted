@@ -77,11 +77,11 @@ export class SqliteCache {
       );
     `);
 
-    const currentVersionRow = this.db
+    let currentVersionRow = this.db
       .prepare('SELECT MAX(version) as version FROM schema_migrations')
       .get() as { version: number | null };
 
-    const currentVersion = currentVersionRow?.version || 0;
+    let currentVersion = currentVersionRow?.version || 0;
 
     if (currentVersion < 1) {
       this.db.exec(`
@@ -117,13 +117,68 @@ export class SqliteCache {
 
         COMMIT;
       `);
+      currentVersion = 1;
+    }
+
+    if (currentVersion < 2) {
+      this.db.exec(`
+        BEGIN TRANSACTION;
+
+        CREATE TABLE IF NOT EXISTS file_context_v2 (
+          branch TEXT NOT NULL DEFAULT 'main',
+          file_path TEXT NOT NULL,
+          feature_ownership TEXT,
+          pr_history TEXT,
+          commit_history TEXT,
+          related_tests TEXT,
+          adr_warnings TEXT,
+          ast_summary TEXT,
+          db_schema_context TEXT,
+          last_indexed_at INTEGER NOT NULL,
+          content_hash TEXT,
+          PRIMARY KEY (branch, file_path)
+        );
+      `);
+
+      const tableCheck = this.db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='file_context'")
+        .get();
+
+      if (tableCheck) {
+        this.db.exec(`
+          INSERT OR IGNORE INTO file_context_v2 (
+            branch, file_path, feature_ownership, pr_history, commit_history,
+            related_tests, adr_warnings, ast_summary, db_schema_context,
+            last_indexed_at, content_hash
+          )
+          SELECT
+            'main', file_path, feature_ownership, pr_history, commit_history,
+            related_tests, adr_warnings, ast_summary, db_schema_context,
+            last_indexed_at, content_hash
+          FROM file_context;
+
+          DROP TABLE file_context;
+        `);
+      }
+
+      this.db.exec(`
+        ALTER TABLE file_context_v2 RENAME TO file_context;
+
+        CREATE INDEX IF NOT EXISTS idx_file_context_branch_path ON file_context(branch, file_path);
+        CREATE INDEX IF NOT EXISTS idx_file_context_indexed_at ON file_context(last_indexed_at);
+
+        INSERT INTO schema_migrations (version, applied_at) VALUES (2, ${Date.now()});
+
+        COMMIT;
+      `);
+      currentVersion = 2;
     }
   }
 
   private prepareStatements(): void {
     try {
       this.stmtGetFileContext = this.db.prepare(
-        'SELECT * FROM file_context WHERE file_path = ?'
+        'SELECT * FROM file_context WHERE branch = ? AND file_path = ?'
       );
       this.stmtGetGitMeta = this.db.prepare(
         'SELECT * FROM git_metadata WHERE branch = ?'
@@ -132,13 +187,13 @@ export class SqliteCache {
       if (!this.isReadOnly) {
         this.stmtUpsertFileContext = this.db.prepare(`
           INSERT INTO file_context (
-            file_path, feature_ownership, pr_history, commit_history,
+            branch, file_path, feature_ownership, pr_history, commit_history,
             related_tests, adr_warnings, ast_summary, db_schema_context,
             last_indexed_at, content_hash
           ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
           )
-          ON CONFLICT(file_path) DO UPDATE SET
+          ON CONFLICT(branch, file_path) DO UPDATE SET
             feature_ownership = excluded.feature_ownership,
             pr_history = excluded.pr_history,
             commit_history = excluded.commit_history,
@@ -170,20 +225,21 @@ export class SqliteCache {
   /**
    * Fast read-only context lookup for active editor changes (<2ms execution).
    */
-  public getFileContext(filePath: string): FileContext | null {
+  public getFileContext(filePath: string, branch: string = 'main'): FileContext | null {
     if (!this.stmtGetFileContext) {
       this.stmtGetFileContext = this.db.prepare(
-        'SELECT * FROM file_context WHERE file_path = ?'
+        'SELECT * FROM file_context WHERE branch = ? AND file_path = ?'
       );
     }
 
-    const row = this.stmtGetFileContext.get(filePath) as any;
+    const row = this.stmtGetFileContext.get(branch, filePath) as any;
     if (!row) {
       return null;
     }
 
     return {
       filePath: row.file_path,
+      branch: row.branch,
       featureOwnership: row.feature_ownership
         ? (JSON.parse(row.feature_ownership) as FeatureOwnership)
         : undefined,
@@ -219,7 +275,10 @@ export class SqliteCache {
       this.prepareStatements();
     }
 
+    const branch = context.branch || 'main';
+
     this.stmtUpsertFileContext!.run(
+      branch,
       context.filePath,
       context.featureOwnership ? JSON.stringify(context.featureOwnership) : null,
       JSON.stringify(context.prHistory || []),
@@ -233,14 +292,20 @@ export class SqliteCache {
     );
   }
 
-  public removeFileContext(filePath: string): void {
+  public removeFileContext(filePath: string, branch?: string): void {
     if (this.isReadOnly) return;
-    if (!this.stmtDeleteFileContext) {
-      this.stmtDeleteFileContext = this.db.prepare(
-        'DELETE FROM file_context WHERE file_path = ?'
-      );
+    if (branch) {
+      this.db
+        .prepare('DELETE FROM file_context WHERE branch = ? AND file_path = ?')
+        .run(branch, filePath);
+    } else {
+      if (!this.stmtDeleteFileContext) {
+        this.stmtDeleteFileContext = this.db.prepare(
+          'DELETE FROM file_context WHERE file_path = ?'
+        );
+      }
+      this.stmtDeleteFileContext.run(filePath);
     }
-    this.stmtDeleteFileContext.run(filePath);
   }
 
   public getGitMetadata(branch: string): GitMetadata | null {
@@ -281,7 +346,13 @@ export class SqliteCache {
     return 0;
   }
 
-  public getIndexedFileCount(): number {
+  public getIndexedFileCount(branch?: string): number {
+    if (branch) {
+      const row = this.db
+        .prepare('SELECT COUNT(*) as cnt FROM file_context WHERE branch = ?')
+        .get(branch) as { cnt: number };
+      return row?.cnt || 0;
+    }
     const row = this.db
       .prepare('SELECT COUNT(*) as cnt FROM file_context')
       .get() as { cnt: number };
@@ -295,11 +366,11 @@ export class SqliteCache {
     if (this.isReadOnly) return false;
     const currentSize = this.getDbSizeBytes();
     if (currentSize > maxSizeBytes) {
-      // Delete oldest 20% of indexed records
+      // Delete oldest 20% of indexed records across all branch contexts
       this.db.exec(`
         DELETE FROM file_context
-        WHERE file_path IN (
-          SELECT file_path FROM file_context
+        WHERE rowid IN (
+          SELECT rowid FROM file_context
           ORDER BY last_indexed_at ASC
           LIMIT (SELECT COUNT(*) / 5 FROM file_context)
         );
