@@ -1,8 +1,12 @@
+import os
+import tempfile
 import time
 from datetime import datetime, timezone
 import pytest
+
 from src.context_engine.indexer import GlobalTicketIndex
 from src.context_engine.models import PullRequest, Commit
+from contextbuilder.inference.clustering import FeatureClusterer
 
 
 def test_ticket_indexing_overhead_sla():
@@ -53,3 +57,32 @@ def test_ticket_indexing_overhead_sla():
 
     # Requirement 5 SLA: Overhead < 50 ms
     assert avg_time_ms < 50.0, f"Indexing overhead ({avg_time_ms:.2f} ms) exceeded 50ms SLA boundary"
+
+
+def test_large_repository_inference_performance():
+    """Verify initial heuristic feature inference for 10,000 files completes in under 10 seconds."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        num_files = 10_000
+        num_modules = 20
+        files_per_module = num_files // num_modules
+
+        # Create 10,000 files across 20 module directories
+        for m in range(num_modules):
+            module_dir = os.path.join(tmp_dir, f"src/module_{m}")
+            os.makedirs(module_dir, exist_ok=True)
+            for f_idx in range(files_per_module):
+                file_path = os.path.join(module_dir, f"file_{f_idx}.py")
+                with open(file_path, "w") as f:
+                    f.write(f"import src.module_{(m + 1) % num_modules}\ndef func_{f_idx}(): pass\n")
+
+        start_time = time.perf_counter()
+
+        clusterer = FeatureClusterer(tmp_dir)
+        registry = clusterer.infer_registry()
+
+        elapsed_time = time.perf_counter() - start_time
+
+        print(f"Inferred {len(registry.features)} features for 10,000 files in {elapsed_time:.3f} seconds.")
+
+        assert elapsed_time < 10.0, f"Performance requirement failed: took {elapsed_time:.3f}s (threshold 10s)"
+        assert len(registry.features) >= num_modules
