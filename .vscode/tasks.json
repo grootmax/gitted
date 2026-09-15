@@ -1,0 +1,46 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "npm",
+      "script": "build",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": "$tsc",
+      "label": "npm: build"
+    },
+    {
+      "type": "npm",
+      "script": "watch",
+      "isBackground": true,
+      "problemMatcher": "$tsc-watch",
+      "label": "npm: watch"
+    },
+    {
+      "type": "npm",
+      "script": "test",
+      "group": {
+        "kind": "test",
+        "isDefault": true
+      },
+      "label": "npm: test (Vitest)"
+    },
+    {
+      "label": "pytest: run tests",
+      "type": "shell",
+      "command": "python3 -m pytest -v",
+      "group": {
+        "kind": "test"
+      },
+      "problemMatcher": []
+    },
+    {
+      "label": "gitted: lint ADRs",
+      "type": "shell",
+      "command": "python3 -m gitted.cli lint --repo . --adr-dir docs/adr",
+      "problemMatcher": []
+    }
+  ]
+}
