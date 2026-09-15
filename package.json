@@ -2,8 +2,44 @@
   "name": "gitted",
   "version": "1.0.0",
   "description": "Dynamic fan-out dampening, inverse reference frequency scoring, regex fallback parser, parse status indicator, Git move tracking, and AST symbol fingerprinting",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
+  "main": "out/extension.js",
+  "types": "out/index.d.ts",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gitted-sidebar-view",
+          "title": "gitted",
+          "icon": "$(git-branch)"
+        }
+      ]
+    },
+    "views": {
+      "gitted-sidebar-view": [
+        {
+          "type": "webview",
+          "id": "gitted.sidebar",
+          "name": "gitted Context"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "gitted.refreshContext",
+        "title": "gitted: Refresh Context"
+      },
+      {
+        "command": "gitted.lintAnchors",
+        "title": "gitted: Lint ADR Anchors"
+      }
+    ]
+  },
   "scripts": {
     "build": "tsc",
     "watch": "tsc -w",
