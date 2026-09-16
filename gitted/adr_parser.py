@@ -30,11 +30,14 @@ class ADRParser:
         adr_id = metadata.get("id")
         if not adr_id:
             # Check title or filename e.g., ADR-024 or 0024
-            id_match = re.search(r"\b(ADR-\d+|\b\d{3,4}\b)", title, re.IGNORECASE) or \
-                       re.search(r"\b(ADR-\d+|\b\d{3,4}\b)", os.path.basename(file_path), re.IGNORECASE)
+            id_match = re.search(r"\b(ADR-\d+|\b\d{1,4}\b)", title, re.IGNORECASE) or \
+                       re.search(r"\b(ADR-\d+|\b\d{1,4}\b)", os.path.basename(file_path), re.IGNORECASE)
             if id_match:
                 raw_id = id_match.group(1)
-                adr_id = raw_id.upper() if raw_id.upper().startswith("ADR-") else f"ADR-{raw_id}"
+                if raw_id.upper().startswith("ADR-"):
+                    adr_id = raw_id.upper()
+                else:
+                    adr_id = f"ADR-{raw_id.zfill(3)}"
             else:
                 adr_id = "ADR-UNKNOWN"
 
