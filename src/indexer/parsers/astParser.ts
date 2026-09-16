@@ -1,5 +1,6 @@
 import * as ts from 'typescript';
 import * as fs from 'fs';
+import * as path from 'path';
 import { ASTNodeSummary, FeatureOwnership, DbSchemaContext } from '../../types';
 
 export interface ParsedAstResult {
@@ -8,9 +9,213 @@ export interface ParsedAstResult {
   dbSchemaContext?: DbSchemaContext;
 }
 
+function extractCommentsOwnership(fileContent: string): { team: string; owner: string; feature: string } {
+  let team = '';
+  let owner = '';
+  let feature = '';
+
+  const lines = fileContent.split(/\r?\n/);
+  for (const line of lines) {
+    if (!line.includes('@')) continue;
+
+    // Matches @owner, @team, or @feature annotations with flexible separators across comment types
+    const tagRegex = /@(owner|team|feature)\b\s*[:=]?\s*(["']?.*?["']?)(?=(?:\s+@(owner|team|feature)\b|\*\/|-->|\/\/|#|--|\r|\n|$))/gi;
+    let match: RegExpExecArray | null;
+    while ((match = tagRegex.exec(line)) !== null) {
+      const key = match[1].toLowerCase();
+      let val = match[2].trim();
+
+      // Clean value delimiters and comment end symbols
+      val = val.replace(/^[:=]\s*/, '').trim();
+      val = val.replace(/(\*\/|-->|#|\/\/|--).*$/, '').trim();
+      val = val.replace(/^["']|["']$/g, '').trim();
+
+      if (val) {
+        if (key === 'team' && !team) team = val;
+        if (key === 'owner' && !owner) owner = val;
+        if (key === 'feature' && !feature) feature = val;
+      }
+    }
+  }
+
+  return { team, owner, feature };
+}
+
+function lookupCodeownersOwnership(filePath: string, workspaceRoot?: string): { team: string; owner: string; feature: string } {
+  let team = '';
+  let owner = '';
+  let feature = '';
+
+  if (!workspaceRoot) return { team, owner, feature };
+
+  const codeownersPaths = [
+    path.join(workspaceRoot, '.github', 'CODEOWNERS'),
+    path.join(workspaceRoot, '.gitlab', 'CODEOWNERS'),
+    path.join(workspaceRoot, 'docs', 'CODEOWNERS'),
+    path.join(workspaceRoot, 'CODEOWNERS'),
+  ];
+
+  const relativePath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
+
+  for (const coPath of codeownersPaths) {
+    if (fs.existsSync(coPath)) {
+      try {
+        const content = fs.readFileSync(coPath, 'utf-8');
+        const lines = content.split(/\r?\n/);
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          const parts = trimmed.split(/\s+/);
+          const pattern = parts[0];
+          const owners = parts.slice(1);
+          if (pattern && owners.length > 0) {
+            const cleanPattern = pattern.replace(/^\//, '').replace(/\/$/, '');
+            if (cleanPattern === '*' || relativePath.includes(cleanPattern)) {
+              const matchedOwner = owners[0].replace(/^@/, '');
+              owner = matchedOwner;
+              team = `${matchedOwner} Team`;
+            }
+          }
+        }
+      } catch {
+        // Ignore file read error
+      }
+    }
+  }
+
+  return { team, owner, feature };
+}
+
+function lookupFeaturesYmlOwnership(filePath: string, workspaceRoot?: string): { team: string; owner: string; feature: string } {
+  let team = '';
+  let owner = '';
+  let feature = '';
+
+  if (!workspaceRoot) return { team, owner, feature };
+
+  const ymlPaths = [
+    path.join(workspaceRoot, '.contextbuilder', 'features.yml'),
+    path.join(workspaceRoot, '.contextbuilder', 'features.yaml'),
+    path.join(workspaceRoot, 'features.yml'),
+  ];
+
+  const relativePath = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
+
+  for (const ymlPath of ymlPaths) {
+    if (fs.existsSync(ymlPath)) {
+      try {
+        const content = fs.readFileSync(ymlPath, 'utf-8');
+        const lines = content.split(/\r?\n/);
+        let currentFeatureId = '';
+        let currentFeatureName = '';
+        let currentTeam = '';
+        let currentOwner = '';
+        let inPaths = false;
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (line.match(/^  [a-zA-Z0-9_-]+:/)) {
+            currentFeatureId = line.trim().replace(':', '');
+            currentFeatureName = '';
+            currentTeam = '';
+            currentOwner = '';
+            inPaths = false;
+          } else if (trimmed.startsWith('name:')) {
+            currentFeatureName = trimmed.replace('name:', '').trim();
+          } else if (trimmed.startsWith('team:')) {
+            currentTeam = trimmed.replace('team:', '').trim();
+          } else if (trimmed.startsWith('owner:')) {
+            currentOwner = trimmed.replace('owner:', '').trim();
+          } else if (trimmed.startsWith('paths:')) {
+            inPaths = true;
+          } else if (inPaths && trimmed.startsWith('-')) {
+            const pathEntry = trimmed.replace('-', '').trim();
+            if (relativePath.includes(pathEntry) || relativePath.startsWith(pathEntry)) {
+              feature = currentFeatureName || currentFeatureId;
+              team = currentTeam;
+              owner = currentOwner;
+            }
+          }
+        }
+      } catch {
+        // Ignore read error
+      }
+    }
+  }
+
+  return { team, owner, feature };
+}
+
+function derivePathOwnership(filePath: string): { team: string; owner: string; feature: string } {
+  let team = '';
+  let owner = '';
+  let feature = '';
+
+  const lowerPath = filePath.toLowerCase().replace(/\\/g, '/');
+
+  if (lowerPath.includes('payment') || lowerPath.includes('checkout') || lowerPath.includes('billing') || lowerPath.includes('stripe') || lowerPath.includes('invoice')) {
+    team = 'Billing Team';
+    owner = 'payment-devs';
+    feature = 'Payment Gateway';
+  } else if (lowerPath.includes('user') || lowerPath.includes('auth') || lowerPath.includes('identity') || lowerPath.includes('login') || lowerPath.includes('session')) {
+    team = 'Identity Team';
+    owner = 'auth-devs';
+    feature = 'User Authentication';
+  } else if (lowerPath.includes('cart') || lowerPath.includes('order') || lowerPath.includes('shipping')) {
+    team = 'Orders Team';
+    owner = 'order-devs';
+    feature = 'Order Management';
+  } else if (lowerPath.includes('search') || lowerPath.includes('catalog') || lowerPath.includes('product')) {
+    team = 'Catalog Team';
+    owner = 'search-devs';
+    feature = 'Product Catalog';
+  } else if (lowerPath.includes('notification') || lowerPath.includes('email') || lowerPath.includes('message')) {
+    team = 'Messaging Team';
+    owner = 'msg-devs';
+    feature = 'Notifications';
+  } else if (lowerPath.includes('admin') || lowerPath.includes('dashboard') || lowerPath.includes('analytics')) {
+    team = 'Admin Team';
+    owner = 'admin-devs';
+    feature = 'Analytics & Admin';
+  } else if (lowerPath.includes('sidebar') || lowerPath.includes('ui') || lowerPath.includes('component')) {
+    team = 'Frontend Team';
+    owner = 'frontend-devs';
+    feature = 'UI & Sidebar';
+  } else if (lowerPath.includes('graph') || lowerPath.includes('cache') || lowerPath.includes('indexer') || lowerPath.includes('parser') || lowerPath.includes('ast') || lowerPath.includes('pipeline') || lowerPath.includes('context')) {
+    team = 'Core Infrastructure';
+    owner = 'platform-devs';
+    feature = 'Core Engine';
+  } else if (lowerPath.includes('db') || lowerPath.includes('schema') || lowerPath.includes('migration') || lowerPath.includes('model')) {
+    team = 'Database Team';
+    owner = 'db-devs';
+    feature = 'Data Persistence';
+  } else if (lowerPath.includes('test') || lowerPath.includes('spec') || lowerPath.includes('benchmark')) {
+    team = 'QA Team';
+    owner = 'qa-devs';
+    feature = 'Testing Framework';
+  } else {
+    // Dynamic folder name extraction fallback
+    const parts = lowerPath.split('/').filter(p => p && !['src', 'lib', 'app', 'pkg', 'dist', 'out', 'internal'].includes(p));
+    if (parts.length > 1) {
+      const folder = parts[0];
+      const capitalized = folder.charAt(0).toUpperCase() + folder.slice(1);
+      feature = capitalized;
+      team = `${capitalized} Team`;
+      owner = `${folder}-devs`;
+    } else {
+      feature = 'Core System';
+      team = 'Core Team';
+      owner = 'dev';
+    }
+  }
+
+  return { team, owner, feature };
+}
+
 export async function parseAstAsync(
   filePath: string,
-  content?: string
+  content?: string,
+  workspaceRoot?: string
 ): Promise<ParsedAstResult> {
   return new Promise((resolve) => {
     // Execute AST parsing in next tick to avoid blocking main loop
@@ -39,9 +244,44 @@ export async function parseAstAsync(
         const ddlOperations: Array<{ operation: 'CREATE' | 'ALTER' | 'DROP'; table: string }> = [];
         const seenOps = new Set<string>();
 
-        let team = '';
-        let owner = '';
-        let feature = '';
+        // 1. Extract comment-based feature ownership annotations (@owner, @team, @feature)
+        const commentOwnership = extractCommentsOwnership(fileContent);
+        let team = commentOwnership.team;
+        let owner = commentOwnership.owner;
+        let feature = commentOwnership.feature;
+
+        // 2. Fallback to .contextbuilder/features.yml if tags missing
+        if (!team || !owner || !feature) {
+          const ymlOwnership = lookupFeaturesYmlOwnership(filePath, workspaceRoot);
+          if (!team && ymlOwnership.team) team = ymlOwnership.team;
+          if (!owner && ymlOwnership.owner) owner = ymlOwnership.owner;
+          if (!feature && ymlOwnership.feature) feature = ymlOwnership.feature;
+        }
+
+        // 3. Fallback to CODEOWNERS if tags missing
+        if (!team || !owner) {
+          const coOwnership = lookupCodeownersOwnership(filePath, workspaceRoot);
+          if (!team && coOwnership.team) team = coOwnership.team;
+          if (!owner && coOwnership.owner) owner = coOwnership.owner;
+        }
+
+        // 4. Fallback to path / directory heuristics
+        if (!team || !owner || !feature) {
+          const pathOwnership = derivePathOwnership(filePath);
+          if (!team) team = pathOwnership.team;
+          if (!owner) owner = pathOwnership.owner;
+          if (!feature) feature = pathOwnership.feature;
+        }
+
+        const finalFeature = feature || (team ? team.replace(/\s*Team$/, '') : 'General');
+        const finalTeam = team || (feature ? `${feature} Team` : 'Core Team');
+        const finalOwner = owner || (feature ? `${feature.toLowerCase().replace(/\s+/g, '-')}-devs` : 'dev');
+
+        const featureOwnershipObj: FeatureOwnership = {
+          team: finalTeam,
+          owner: finalOwner,
+          feature: finalFeature,
+        };
 
         function addDdlOp(op: 'CREATE' | 'ALTER' | 'DROP', tbl: string) {
           const cleanTbl = tbl.trim().replace(/[`'"]/g, '');
@@ -97,32 +337,6 @@ export async function parseAstAsync(
             if (method === 'createtable') addDdlOp('CREATE', tbl);
             else if (method === 'droptable' || method === 'droptableifexists') addDdlOp('DROP', tbl);
             else addDdlOp('ALTER', tbl);
-          }
-        }
-
-        // Extract comment-based feature ownership annotations (e.g. @owner, @team, @feature)
-        const commentMatches = fileContent.match(/\/\/\s*@(owner|team|feature)\s+(.+)/gi);
-        if (commentMatches) {
-          for (const match of commentMatches) {
-            const parts = match.replace(/\/\/\s*@/, '').split(/\s+/);
-            const key = parts[0]?.toLowerCase();
-            const val = parts.slice(1).join(' ').trim();
-            if (key === 'team') team = val;
-            if (key === 'owner') owner = val;
-            if (key === 'feature') feature = val;
-          }
-        }
-
-        // Default fallbacks if omitted
-        if (!team && !owner && !feature) {
-          if (filePath.includes('payment') || filePath.includes('checkout')) {
-            team = 'Billing Team';
-            owner = 'payment-devs';
-            feature = 'Payment Gateway';
-          } else if (filePath.includes('user') || filePath.includes('auth')) {
-            team = 'Identity Team';
-            owner = 'auth-devs';
-            feature = 'User Authentication';
           }
         }
 
@@ -187,10 +401,7 @@ export async function parseAstAsync(
             exports: exportsList,
             imports: importsList,
           },
-          featureOwnership:
-            team || owner || feature
-              ? { team: team || 'Core Team', owner: owner || 'dev', feature: feature || 'General' }
-              : undefined,
+          featureOwnership: featureOwnershipObj,
           dbSchemaContext:
             uniqueTables.length > 0 || uniqueModels.length > 0 || ddlOperations.length > 0
               ? {
@@ -210,3 +421,4 @@ export async function parseAstAsync(
     });
   });
 }
+
