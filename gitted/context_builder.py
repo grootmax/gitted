@@ -52,11 +52,14 @@ class ContextBuilder:
                 matches_file = True
             else:
                 for anchor in adr.anchors:
-                    if anchor.file_path.replace("\\", "/").strip() == norm_path:
+                    anchor_path = anchor.file_path.replace("\\", "/").strip()
+                    if anchor_path == norm_path:
                         matches_file = True
                         break
-                    # Also match if file_path ends with anchor file path or vice versa
-                    elif norm_path.endswith(anchor.file_path.strip()) or anchor.file_path.strip().endswith(norm_path):
+                    elif norm_path.endswith("/" + anchor_path) or anchor_path.endswith("/" + norm_path):
+                        matches_file = True
+                        break
+                    elif Path(norm_path).name.lower() == Path(anchor_path).name.lower():
                         matches_file = True
                         break
 
