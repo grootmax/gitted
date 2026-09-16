@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { ASTParseError, PrimaryASTParser } from '../src/parsers/astParser.js';
+import { parseAstAsync } from '../src/indexer/parsers/astParser.js';
 
 describe('PrimaryASTParser', () => {
   const parser = new PrimaryASTParser();
@@ -77,3 +78,77 @@ describe('PrimaryASTParser', () => {
     }).toThrow(ASTParseError);
   });
 });
+
+describe('parseAstAsync Feature Ownership Extraction', () => {
+  it('extracts feature ownership from single-line JS/TS comment tags with colons and quotes', async () => {
+    const code = `
+      // @team: "Billing Team"
+      // @owner: "payment-devs"
+      // @feature: "Checkout V2"
+      export function checkout() {}
+    `;
+    const res = await parseAstAsync('src/checkout.ts', code);
+    expect(res.featureOwnership).toEqual({
+      team: 'Billing Team',
+      owner: 'payment-devs',
+      feature: 'Checkout V2',
+    });
+  });
+
+  it('extracts feature ownership from Python hash comments', async () => {
+    const code = `
+      # @team: Identity Team
+      # @owner: auth-devs
+      # @feature: User Authentication
+      def login(): pass
+    `;
+    const res = await parseAstAsync('src/auth.py', code);
+    expect(res.featureOwnership).toEqual({
+      team: 'Identity Team',
+      owner: 'auth-devs',
+      feature: 'User Authentication',
+    });
+  });
+
+  it('extracts feature ownership from JSDoc/C-style block comments', async () => {
+    const code = `
+      /**
+       * @team Catalog Team
+       * @owner search-devs
+       * @feature Product Search
+       */
+      class ProductCatalog {}
+    `;
+    const res = await parseAstAsync('src/catalog.ts', code);
+    expect(res.featureOwnership).toEqual({
+      team: 'Catalog Team',
+      owner: 'search-devs',
+      feature: 'Product Search',
+    });
+  });
+
+  it('extracts feature ownership from HTML/XML comments', async () => {
+    const code = `
+      <!-- @team: Frontend Team -->
+      <!-- @owner: frontend-devs -->
+      <!-- @feature: UI Sidebar -->
+      <div>Sidebar Content</div>
+    `;
+    const res = await parseAstAsync('src/sidebar.html', code);
+    expect(res.featureOwnership).toEqual({
+      team: 'Frontend Team',
+      owner: 'frontend-devs',
+      feature: 'UI Sidebar',
+    });
+  });
+
+  it('derives feature ownership from path heuristics when no tags exist', async () => {
+    const code = `export class OrderService {}`;
+    const res = await parseAstAsync('src/orders/orderService.ts', code);
+    expect(res.featureOwnership).toBeDefined();
+    expect(res.featureOwnership?.team).toBe('Orders Team');
+    expect(res.featureOwnership?.owner).toBe('order-devs');
+    expect(res.featureOwnership?.feature).toBe('Order Management');
+  });
+});
+
