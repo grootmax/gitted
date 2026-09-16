@@ -50,6 +50,18 @@ export class SidebarProvider {
                 .join('')}
             </ul>
           </div>`
+        : ctx.commitHistory && ctx.commitHistory.length > 0
+        ? `<div class="card">
+            <h4>PR & Commit History</h4>
+            <ul>
+              ${ctx.commitHistory
+                .map(
+                  (c) =>
+                    `<li><strong>${c.hash}:</strong> ${c.message} <em>by ${c.author} on ${c.date}</em></li>`
+                )
+                .join('')}
+            </ul>
+          </div>`
         : `<div class="card"><h4>PR History</h4><p class="muted">No related PR history found.</p></div>`;
 
     const testsHtml =

@@ -1,6 +1,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
+import * as fs from 'fs';
 import { PRInfo, CommitInfo, GitMetadata } from '../../types';
 
 const execAsync = promisify(exec);
@@ -46,32 +47,99 @@ export async function parseGitAsync(
     const prs: PRInfo[] = [];
     const prMap = new Set<string>();
 
-    if (logRes.stdout) {
-      const lines = logRes.stdout.split('\n').filter(Boolean);
+    let logOutput = logRes.stdout;
+    if (!logOutput) {
+      // Fallback to repository-wide git log if file-specific git log is empty
+      const repoLog = await execAsync(
+        `git log -n 5 --pretty=format:"%H|%an|%s|%ad" --date=short`,
+        { cwd: workspaceRoot, timeout: 3000 }
+      ).catch(() => ({ stdout: '' }));
+      logOutput = repoLog.stdout;
+    }
+
+    if (logOutput) {
+      const lines = logOutput.split('\n').filter(Boolean);
       for (const line of lines) {
         const [hash, author, message, date] = line.split('|');
         if (hash) {
+          const shortHash = hash.trim().slice(0, 7);
           commits.push({
-            hash: hash.trim().slice(0, 7),
+            hash: shortHash,
             author: author?.trim() || 'Unknown',
             message: message?.trim() || 'Update file',
             date: date?.trim() || new Date().toISOString().slice(0, 10),
           });
 
-          // Check if commit message references PR (e.g., #123 or Merge pull request #123)
-          const prMatch = message?.match(/#(\d+)/);
-          if (prMatch && prMatch[1] && !prMap.has(prMatch[1])) {
-            const prId = prMatch[1];
-            prMap.add(prId);
+          // Check if commit message references PR using expanded patterns
+          const prPatterns = [
+            /#(\d+)/,
+            /PR[- #]?(\d+)/i,
+            /pull request #?(\d+)/i,
+            /merge.*#?(\d+)/i,
+            /(?:close|closes|closed|fix|fixes|fixed|resolve|resolves|resolved)\s+#?(\d+)/i,
+          ];
+          let foundPrId: string | null = null;
+          for (const pattern of prPatterns) {
+            const match = message?.match(pattern);
+            if (match && match[1]) {
+              foundPrId = match[1];
+              break;
+            }
+          }
+
+          if (foundPrId && !prMap.has(foundPrId)) {
+            prMap.add(foundPrId);
             prs.push({
-              id: `#${prId}`,
+              id: `#${foundPrId}`,
               title: message.trim(),
               author: author?.trim() || 'developer',
               date: date?.trim() || new Date().toISOString().slice(0, 10),
-              url: `https://github.com/pull/${prId}`,
+              url: `https://github.com/pull/${foundPrId}`,
             });
           }
         }
+      }
+    }
+
+    // Check .contextbuilder/timeline.json for persisted PR entries
+    const timelinePath = path.join(workspaceRoot, '.contextbuilder', 'timeline.json');
+    if (fs.existsSync(timelinePath)) {
+      try {
+        const raw = fs.readFileSync(timelinePath, 'utf-8');
+        const data = JSON.parse(raw);
+        if (data && Array.isArray(data.entries)) {
+          for (const entry of data.entries) {
+            if (entry.pr_number) {
+              const prId = String(entry.pr_number);
+              if (!prMap.has(prId)) {
+                prMap.add(prId);
+                prs.push({
+                  id: `#${prId}`,
+                  title: entry.reason || `${entry.change_type || 'PR'} #${prId}`,
+                  author: 'developer',
+                  date: entry.timestamp
+                    ? String(entry.timestamp).slice(0, 10)
+                    : new Date().toISOString().slice(0, 10),
+                  url: `https://github.com/pull/${prId}`,
+                });
+              }
+            }
+          }
+        }
+      } catch {
+        // Ignore JSON parse error
+      }
+    }
+
+    // Fallback: If no PR numbers were matched, synthesize PR history entries from recent commits
+    if (prs.length === 0 && commits.length > 0) {
+      for (const c of commits) {
+        prs.push({
+          id: c.hash,
+          title: c.message,
+          author: c.author,
+          date: c.date,
+        });
       }
     }
 
