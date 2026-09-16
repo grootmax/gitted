@@ -101,7 +101,7 @@ export class BackgroundIndexer {
 
       // Execute off-thread async parsers concurrently
       const [astResult, gitResult, adrWarnings, relatedTests] = await Promise.all([
-        parseAstAsync(filePath, fileContent),
+        parseAstAsync(filePath, fileContent, this.workspaceRoot),
         parseGitAsync(filePath, this.workspaceRoot),
         parseAdrAsync(filePath, this.workspaceRoot, fileContent),
         mapRelatedTestsAsync(filePath, this.workspaceRoot),
