@@ -113,21 +113,12 @@ export async function mapRelatedTestsAsync(
           }
         }
 
-        // If file is itself a test file and exists on disk
-        if (
-          (absFilePath.includes('.test.') ||
-            absFilePath.includes('.spec.') ||
-            absFilePath.includes('test_') ||
-            absFilePath.includes('_test.')) &&
-          fs.existsSync(absFilePath)
-        ) {
-          const relPath = path.relative(workspaceRoot, absFilePath) || absFilePath;
-          if (!tests.some((t) => t.file === relPath)) {
-            tests.push({
-              file: relPath,
-              testName: `Self Test File`,
-            });
-          }
+        // If file is itself a test file
+        if (filePath.includes('.test.') || filePath.includes('.spec.')) {
+          tests.push({
+            file: path.relative(workspaceRoot, filePath) || filePath,
+            testName: `Self Test File`,
+          });
         }
 
         resolve(tests);

@@ -2,7 +2,7 @@ export interface FeatureOwnership {
   team?: string;
   owner?: string;
   feature?: string;
-  source?: 'file' | 'codeowners' | 'feature_config' | string;
+  source?: 'file' | 'codeowners' | 'feature_config' | 'inferred' | 'found' | string;
 }
 
 export interface PRInfo {
@@ -64,6 +64,7 @@ export interface FileContext {
   dbSchemaContext?: DbSchemaContext;
   lastIndexedAt: number;
   contentHash?: string;
+  isIndexing?: boolean;
 }
 
 export interface GitMetadata {

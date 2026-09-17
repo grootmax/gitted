@@ -337,7 +337,6 @@ export async function parseAdrAsync(
             });
           }
         }
-
         resolve(warnings);
       } catch {
         resolve([]);
