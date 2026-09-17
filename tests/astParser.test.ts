@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { ASTParseError, PrimaryASTParser } from '../src/parsers/astParser.js';
 import { parseAstAsync } from '../src/indexer/parsers/astParser.js';
 
@@ -92,6 +95,7 @@ describe('parseAstAsync Feature Ownership Extraction', () => {
       team: 'Billing Team',
       owner: 'payment-devs',
       feature: 'Checkout V2',
+      source: 'file',
     });
   });
 
@@ -107,6 +111,7 @@ describe('parseAstAsync Feature Ownership Extraction', () => {
       team: 'Identity Team',
       owner: 'auth-devs',
       feature: 'User Authentication',
+      source: 'file',
     });
   });
 
@@ -124,6 +129,7 @@ describe('parseAstAsync Feature Ownership Extraction', () => {
       team: 'Catalog Team',
       owner: 'search-devs',
       feature: 'Product Search',
+      source: 'file',
     });
   });
 
@@ -139,16 +145,65 @@ describe('parseAstAsync Feature Ownership Extraction', () => {
       team: 'Frontend Team',
       owner: 'frontend-devs',
       feature: 'UI Sidebar',
+      source: 'file',
     });
   });
 
-  it('derives feature ownership from path heuristics when no tags exist', async () => {
+  it('returns undefined feature ownership when no evidence exists, without full path guessing', async () => {
     const code = `export class OrderService {}`;
-    const res = await parseAstAsync('src/orders/orderService.ts', code);
-    expect(res.featureOwnership).toBeDefined();
-    expect(res.featureOwnership?.team).toBe('Orders Team');
-    expect(res.featureOwnership?.owner).toBe('order-devs');
-    expect(res.featureOwnership?.feature).toBe('Order Management');
+    const res = await parseAstAsync('/Users/username/Identity/gitted/.gitignore', code);
+    expect(res.featureOwnership).toBeUndefined();
+  });
+
+  it('extracts feature ownership from CODEOWNERS file with source codeowners', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codeowners-test-'));
+    const githubDir = path.join(tmpDir, '.github');
+    fs.mkdirSync(githubDir, { recursive: true });
+    fs.writeFileSync(path.join(githubDir, 'CODEOWNERS'), 'src/payment/* @payment-team\n');
+
+    const filePath = path.join(tmpDir, 'src', 'payment', 'processor.ts');
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, 'export function pay() {}');
+
+    const res = await parseAstAsync(filePath, undefined, tmpDir);
+    expect(res.featureOwnership).toEqual({
+      team: 'payment-team Team',
+      owner: 'payment-team',
+      source: 'codeowners',
+    });
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('extracts feature ownership from .contextbuilder/features.yml with source feature_config', async () => {
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'features-test-'));
+    const cbDir = path.join(tmpDir, '.contextbuilder');
+    fs.mkdirSync(cbDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(cbDir, 'features.yml'),
+      `
+  feat_billing:
+    name: Billing Engine
+    team: Finance Team
+    owner: fin-devs
+    paths:
+      - src/billing
+`
+    );
+
+    const filePath = path.join(tmpDir, 'src', 'billing', 'invoice.ts');
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, 'export class Invoice {}');
+
+    const res = await parseAstAsync(filePath, undefined, tmpDir);
+    expect(res.featureOwnership).toEqual({
+      feature: 'Billing Engine',
+      team: 'Finance Team',
+      owner: 'fin-devs',
+      source: 'feature_config',
+    });
+
+    fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 });
 

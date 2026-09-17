@@ -28,14 +28,24 @@ export class SidebarProvider {
 
     const ctx = this.currentContext;
 
-    const featureHtml = ctx.featureOwnership
+    const formatSource = (src?: string) => {
+      if (src === 'file') return 'In-file annotation';
+      if (src === 'codeowners') return 'CODEOWNERS file';
+      if (src === 'feature_config') return 'Feature configuration';
+      return src || 'Unknown';
+    };
+
+    const hasOwnership = ctx.featureOwnership && (ctx.featureOwnership.team || ctx.featureOwnership.owner || ctx.featureOwnership.feature);
+
+    const featureHtml = hasOwnership
       ? `<div class="card">
           <h4>Feature Ownership</h4>
-          <p><strong>Team:</strong> ${ctx.featureOwnership.team}</p>
-          <p><strong>Owner:</strong> ${ctx.featureOwnership.owner}</p>
-          <p><strong>Feature:</strong> ${ctx.featureOwnership.feature}</p>
+          <p><strong>Team:</strong> ${ctx.featureOwnership?.team || 'Unknown'}</p>
+          <p><strong>Owner:</strong> ${ctx.featureOwnership?.owner || 'Unknown'}</p>
+          ${ctx.featureOwnership?.feature ? `<p><strong>Feature:</strong> ${ctx.featureOwnership.feature}</p>` : ''}
+          <p><strong>Source:</strong> ${formatSource(ctx.featureOwnership?.source)}</p>
         </div>`
-      : `<div class="card"><h4>Feature Ownership</h4><p class="muted">No feature ownership tag found.</p></div>`;
+      : `<div class="card"><h4>Feature Ownership</h4><p class="muted">Ownership unknown</p></div>`;
 
     const prHtml =
       ctx.prHistory && ctx.prHistory.length > 0
