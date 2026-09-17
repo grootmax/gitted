@@ -1,10 +1,68 @@
+import * as path from 'path';
 import { FileContext, PRInfo, CommitInfo, RelatedTest, ADRWarning } from '../types';
 
 export class SidebarProvider {
   private currentContext: FileContext | null = null;
+  private workspaceRoot: string = '';
+  private messageListener?: (message: { command: string; filePath?: string; prId?: string; hash?: string; url?: string }) => void;
+
+  constructor(workspaceRoot?: string) {
+    if (workspaceRoot) {
+      this.workspaceRoot = workspaceRoot;
+    }
+  }
+
+  public setWorkspaceRoot(root: string): void {
+    this.workspaceRoot = root;
+  }
 
   public updateContext(context: FileContext | null): void {
     this.currentContext = context;
+  }
+
+  public onDidReceiveMessage(
+    listener: (message: { command: string; filePath?: string; prId?: string; hash?: string; url?: string }) => void
+  ): void {
+    this.messageListener = listener;
+  }
+
+  public handleMessage(message: { command: string; filePath?: string; prId?: string; hash?: string; url?: string }): void {
+    if (this.messageListener) {
+      this.messageListener(message);
+    }
+  }
+
+  private getRelativePath(filePath: string): string {
+    if (!filePath) return '';
+    if (this.workspaceRoot && path.isAbsolute(filePath)) {
+      const rel = path.relative(this.workspaceRoot, filePath).replace(/\\/g, '/');
+      if (!rel.startsWith('..')) {
+        return rel;
+      }
+    }
+    return filePath.replace(/\\/g, '/');
+  }
+
+  private escapeHtml(str: string): string {
+    if (!str) return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  private renderBadge(status: 'found' | 'inferred' | 'unavailable' | 'still loading'): string {
+    const labelMap: Record<string, string> = {
+      'found': 'FOUND',
+      'inferred': 'INFERRED',
+      'unavailable': 'UNAVAILABLE',
+      'still loading': 'STILL LOADING',
+    };
+    const label = labelMap[status] || status.toUpperCase();
+    const cssClass = status.replace(/\s+/g, '-');
+    return `<span class="badge badge-${cssClass}">${label}</span>`;
   }
 
   public renderHtml(): string {
@@ -14,7 +72,7 @@ export class SidebarProvider {
         <html>
         <head>
           <style>
-            body { font-family: sans-serif; padding: 12px; color: #cccccc; background: #1e1e1e; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 12px; color: #cccccc; background: #1e1e1e; }
             .empty { color: #888888; font-style: italic; }
           </style>
         </head>
@@ -27,142 +85,400 @@ export class SidebarProvider {
     }
 
     const ctx = this.currentContext;
+    const relativeFilePath = this.getRelativePath(ctx.filePath);
+    const isIndexing = !!ctx.isIndexing;
 
-    const featureHtml = ctx.featureOwnership
-      ? `<div class="card">
+    // 1. Feature Ownership Card
+    let featureState: 'found' | 'inferred' | 'unavailable' | 'still loading' = isIndexing
+      ? 'still loading'
+      : ctx.featureOwnership
+      ? ctx.featureOwnership.source === 'inferred'
+        ? 'inferred'
+        : 'found'
+      : 'unavailable';
+
+    const featureHtml = `
+      <div class="card">
+        <div class="card-header">
           <h4>Feature Ownership</h4>
-          <p><strong>Team:</strong> ${ctx.featureOwnership.team}</p>
-          <p><strong>Owner:</strong> ${ctx.featureOwnership.owner}</p>
-          <p><strong>Feature:</strong> ${ctx.featureOwnership.feature}</p>
-        </div>`
-      : `<div class="card"><h4>Feature Ownership</h4><p class="muted">No feature ownership tag found.</p></div>`;
+          ${this.renderBadge(featureState)}
+        </div>
+        ${
+          featureState === 'still loading'
+            ? `<p class="muted">Loading feature ownership...</p>`
+            : featureState === 'unavailable' || !ctx.featureOwnership
+            ? `<p class="muted">No feature ownership tag found.</p>`
+            : `<p><strong>Team:</strong> ${this.escapeHtml(ctx.featureOwnership.team)}</p>
+               <p><strong>Owner:</strong> ${this.escapeHtml(ctx.featureOwnership.owner)}</p>
+               <p><strong>Feature:</strong> ${this.escapeHtml(ctx.featureOwnership.feature)}</p>
+               ${featureState === 'inferred' ? `<p class="muted info-note">Inferred from directory path structure.</p>` : ''}`
+        }
+      </div>
+    `;
 
-    const prHtml =
-      ctx.prHistory && ctx.prHistory.length > 0
-        ? `<div class="card">
-            <h4>PR History</h4>
-            <ul>
-              ${ctx.prHistory
-                .map(
-                  (pr: PRInfo) =>
-                    `<li><strong>${pr.id}:</strong> ${pr.title} <em>by ${pr.author} on ${pr.date}</em>${
-                      pr.url ? ` <a href="${pr.url}" target="_blank" class="inspect-link">View PR</a>` : ''
-                    }</li>`
-                )
-                .join('')}
-            </ul>
-          </div>`
-        : `<div class="card"><h4>PR History</h4><p class="muted">No linked PR found</p></div>`;
-
-    const commitsHtml =
-      ctx.commitHistory && ctx.commitHistory.length > 0
-        ? `<div class="card">
-            <h4>File Commits</h4>
-            <ul>
-              ${ctx.commitHistory
-                .map(
-                  (c: CommitInfo) =>
-                    `<li><code>${c.hash}</code>: ${c.message} <em>by ${c.author} on ${c.date}</em> <a href="${
-                      c.url || `https://github.com/commit/${c.hash}`
-                    }" target="_blank" class="inspect-link">Inspect change</a></li>`
-                )
-                .join('')}
-            </ul>
-          </div>`
-        : `<div class="card"><h4>File Commits</h4><p class="muted">No commit history found.</p></div>`;
-
-    const testsHtml =
-      ctx.relatedTests && ctx.relatedTests.length > 0
-        ? `<div class="card">
-            <h4>Related Tests</h4>
-            <ul>
-              ${ctx.relatedTests
-                .map((t: RelatedTest) => `<li><code>${t.file}</code> - ${t.testName}</li>`)
-                .join('')}
-            </ul>
-          </div>`
-        : `<div class="card"><h4>Related Tests</h4><p class="muted">No related tests found.</p></div>`;
-
+    // 2. ADR Warnings Card
     const realAdrs = (ctx.adrWarnings || []).filter(
       (adr: ADRWarning) => adr.id !== 'NO_ADR_DOCS' && adr.id !== 'NO_ADR_MATCH'
     );
     const hasAdrDocsSentinel = ctx.adrWarnings?.find((adr) => adr.id === 'NO_ADR_DOCS');
-    const hasNoMatchSentinel = ctx.adrWarnings?.find((adr) => adr.id === 'NO_ADR_MATCH');
 
-    let adrHtml = '';
+    let adrState: 'found' | 'inferred' | 'unavailable' | 'still loading' = isIndexing
+      ? 'still loading'
+      : realAdrs.length > 0
+      ? 'found'
+      : 'unavailable';
 
-    if (realAdrs.length === 0) {
-      if (hasAdrDocsSentinel || ctx.adrWarnings?.some((a) => a.hasAdrDocs === false)) {
-        adrHtml = `<div class="card"><h4>Architecture Decisions</h4><p class="muted">No ADR documents found in project.</p></div>`;
-      } else {
-        adrHtml = `<div class="card"><h4>Architecture Decisions</h4><p class="muted">No ADR matches this file.</p></div>`;
-      }
-    } else {
-      const usefulAdrs = realAdrs.filter((a) => !a.needsAttention && a.status !== 'Stale Anchor');
-      const attentionAdrs = realAdrs.filter((a) => a.needsAttention || a.status === 'Stale Anchor');
+    const adrHtml = `
+      <div class="card ${realAdrs.some((a) => a.needsAttention || a.status === 'Stale Anchor') ? 'warning' : ''}">
+        <div class="card-header">
+          <h4>ADR Warnings</h4>
+          ${this.renderBadge(adrState)}
+        </div>
+        ${
+          adrState === 'still loading'
+            ? `<p class="muted">Loading ADR warnings...</p>`
+            : adrState === 'unavailable' || realAdrs.length === 0
+            ? `<p class="muted">${hasAdrDocsSentinel ? 'No ADR documents found in project.' : 'No ADR warnings for this file.'}</p>`
+            : `<ul>
+                ${realAdrs
+                  .map(
+                    (adr: ADRWarning) =>
+                      `<li>
+                        ${adr.filePath ? `<a href="#" onclick="openFile('${this.escapeHtml(adr.filePath)}')"><code>${this.escapeHtml(this.getRelativePath(adr.filePath))}</code></a>: ` : ''}
+                        <strong style="color:${adr.needsAttention || adr.status === 'Stale Anchor' ? '#f14c4c' : '#4ec9b0'};">[${this.escapeHtml(adr.id)}] ${this.escapeHtml(adr.title)}:</strong> ${this.escapeHtml(adr.warning)}
+                      </li>`
+                  )
+                  .join('')}
+              </ul>`
+        }
+      </div>
+    `;
 
-      const usefulList = usefulAdrs
-        .map(
-          (adr: ADRWarning) =>
-            `<li><strong style="color:#4ec9b0;">[${adr.id}] ${adr.title}:</strong> ${adr.warning}</li>`
-        )
-        .join('');
+    // 3. PR & Commit History Card
+    let prState: 'found' | 'inferred' | 'unavailable' | 'still loading' = isIndexing
+      ? 'still loading'
+      : ctx.prHistory && ctx.prHistory.length > 0
+      ? 'found'
+      : ctx.commitHistory && ctx.commitHistory.length > 0
+      ? 'inferred'
+      : 'unavailable';
 
-      const attentionList = attentionAdrs
-        .map(
-          (adr: ADRWarning) =>
-            `<li><strong style="color:#f14c4c;">⚠️ [${adr.id}] ${adr.title} (${adr.status}):</strong> ${adr.warning}</li>`
-        )
-        .join('');
+    const prCardTitle = prState === 'inferred' || (ctx.commitHistory && ctx.commitHistory.length > 0)
+      ? 'PR History & File Commits'
+      : 'PR History';
 
-      const statusMsg =
-        attentionAdrs.length === 0
-          ? `<p class="muted status-ok" style="color:#89d185; margin-top:6px;">✓ Matching ADR checked with no problem found.</p>`
-          : '';
+    const prHtml = `
+      <div class="card">
+        <div class="card-header">
+          <h4>${prCardTitle}</h4>
+          ${this.renderBadge(prState)}
+        </div>
+        ${
+          prState === 'still loading'
+            ? `<p class="muted">Loading PR & commit history...</p>`
+            : prState === 'found' && ctx.prHistory && ctx.prHistory.length > 0
+            ? `<ul>
+                ${ctx.prHistory
+                  .map(
+                    (pr: PRInfo) =>
+                      `<li>
+                        <a href="#" onclick="openPr('${this.escapeHtml(pr.id)}', '${this.escapeHtml(pr.url || '')}')"><strong>${this.escapeHtml(pr.id)}</strong></a>:
+                        ${this.escapeHtml(pr.title)} <em>by ${this.escapeHtml(pr.author)} on ${this.escapeHtml(pr.date)}</em>
+                        ${pr.url ? ` <a href="${this.escapeHtml(pr.url)}" target="_blank" class="inspect-link">View PR</a>` : ''}
+                      </li>`
+                  )
+                  .join('')}
+              </ul>`
+            : prState === 'inferred' && ctx.commitHistory && ctx.commitHistory.length > 0
+            ? `<p class="muted">No linked PR found.</p>
+              <ul>
+                ${ctx.commitHistory
+                  .map(
+                    (c) =>
+                      `<li>
+                        <a href="#" onclick="openCommit('${this.escapeHtml(c.hash)}')"><strong>${this.escapeHtml(c.hash)}</strong></a>:
+                        ${this.escapeHtml(c.message)} <em>by ${this.escapeHtml(c.author)} on ${this.escapeHtml(c.date)}</em>
+                        <a href="${this.escapeHtml(c.url || `https://github.com/commit/${c.hash}`)}" target="_blank" class="inspect-link">Inspect change</a>
+                      </li>`
+                  )
+                  .join('')}
+              </ul>
+              <p class="muted info-note">Derived from git commit history (no PR ID matched).</p>`
+            : `<p class="muted">No linked PR found. No related PR history found.</p>`
+        }
+      </div>
+    `;
 
-      adrHtml = `
-        <div class="card ${attentionAdrs.length > 0 ? 'warning' : ''}">
-          <h4>Architecture Decisions</h4>
-          ${usefulList ? `<ul>${usefulList}</ul>` : ''}
-          ${attentionList ? `<ul style="margin-top:4px;">${attentionList}</ul>` : ''}
-          ${statusMsg}
+    let commitsHtml = '';
+    if (ctx.commitHistory && ctx.commitHistory.length > 0 && prState === 'found') {
+      commitsHtml = `
+        <div class="card">
+          <div class="card-header">
+            <h4>File Commits</h4>
+            ${this.renderBadge('found')}
+          </div>
+          <ul>
+            ${ctx.commitHistory
+              .map(
+                (c: CommitInfo) =>
+                  `<li>
+                    <code>${this.escapeHtml(c.hash)}</code>: ${this.escapeHtml(c.message)} <em>by ${this.escapeHtml(c.author)} on ${this.escapeHtml(c.date)}</em>
+                    <a href="${this.escapeHtml(c.url || `https://github.com/commit/${c.hash}`)}" target="_blank" class="inspect-link">Inspect change</a>
+                  </li>`
+              )
+              .join('')}
+          </ul>
         </div>
       `;
     }
 
-    const astHtml = ctx.astSummary
-      ? `<div class="card">
+    // 4. Related Tests Card
+    let testsState: 'found' | 'inferred' | 'unavailable' | 'still loading' = isIndexing
+      ? 'still loading'
+      : ctx.relatedTests && ctx.relatedTests.length > 0
+      ? 'found'
+      : 'unavailable';
+
+    const testsHtml = `
+      <div class="card">
+        <div class="card-header">
+          <h4>Related Tests</h4>
+          ${this.renderBadge(testsState)}
+        </div>
+        ${
+          testsState === 'still loading'
+            ? `<p class="muted">Loading related tests...</p>`
+            : testsState === 'unavailable' || !ctx.relatedTests || ctx.relatedTests.length === 0
+            ? `<p class="muted">No related tests found.</p>`
+            : `<ul>
+                ${ctx.relatedTests
+                  .map(
+                    (t: RelatedTest) =>
+                      `<li>
+                        <a href="#" onclick="openFile('${this.escapeHtml(t.file)}')"><code>${this.escapeHtml(this.getRelativePath(t.file))}</code></a>
+                        - ${this.escapeHtml(t.testName)}
+                      </li>`
+                  )
+                  .join('')}
+              </ul>`
+        }
+      </div>
+    `;
+
+    // 5. AST Node Summary Card
+    const hasAstData =
+      ctx.astSummary &&
+      ((ctx.astSummary.functions && ctx.astSummary.functions.length > 0) ||
+        (ctx.astSummary.classes && ctx.astSummary.classes.length > 0) ||
+        (ctx.astSummary.exports && ctx.astSummary.exports.length > 0) ||
+        (ctx.astSummary.imports && ctx.astSummary.imports.length > 0));
+
+    let astState: 'found' | 'inferred' | 'unavailable' | 'still loading' = isIndexing
+      ? 'still loading'
+      : hasAstData
+      ? 'found'
+      : 'unavailable';
+
+    const astHtml = `
+      <div class="card">
+        <div class="card-header">
           <h4>AST Node Summary</h4>
-          <p><strong>Functions:</strong> ${ctx.astSummary.functions.join(', ') || 'None'}</p>
-          <p><strong>Classes:</strong> ${ctx.astSummary.classes.join(', ') || 'None'}</p>
-        </div>`
-      : '';
+          ${this.renderBadge(astState)}
+        </div>
+        ${
+          astState === 'still loading'
+            ? `<p class="muted">Loading AST summary...</p>`
+            : astState === 'unavailable' || !ctx.astSummary || !hasAstData
+            ? `<p class="muted">No AST symbols found for this file.</p>`
+            : `<p><strong>Functions:</strong> ${
+                ctx.astSummary.functions && ctx.astSummary.functions.length > 0
+                  ? ctx.astSummary.functions.map((f) => `<code>${this.escapeHtml(f)}</code>`).join(', ')
+                  : 'None'
+              }</p>
+               <p><strong>Classes:</strong> ${
+                 ctx.astSummary.classes && ctx.astSummary.classes.length > 0
+                   ? ctx.astSummary.classes.map((c) => `<code>${this.escapeHtml(c)}</code>`).join(', ')
+                   : 'None'
+               }</p>
+               ${
+                 ctx.astSummary.exports && ctx.astSummary.exports.length > 0
+                   ? `<p><strong>Exports:</strong> ${ctx.astSummary.exports.map((e) => `<code>${this.escapeHtml(e)}</code>`).join(', ')}</p>`
+                   : ''
+               }`
+        }
+      </div>
+    `;
 
     return `
       <!DOCTYPE html>
       <html>
       <head>
         <style>
-          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 12px; color: #d4d4d4; background-color: #1e1e1e; font-size: 13px; }
-          .card { background-color: #252526; border: 1px solid #3c3c3c; border-radius: 4px; padding: 10px; margin-bottom: 10px; }
-          .card.warning { border-left: 4px solid #f14c4c; }
-          h4 { margin: 0 0 6px 0; color: #569cd6; font-size: 14px; }
-          ul { margin: 0; padding-left: 18px; }
-          li { margin-bottom: 4px; }
-          .muted { color: #808080; font-style: italic; margin: 0; }
-          code { background: #2d2d2d; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
-          a.inspect-link { color: #3794ff; text-decoration: none; margin-left: 4px; font-size: 12px; }
-          a.inspect-link:hover { text-decoration: underline; }
+          body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            padding: 12px;
+            color: #d4d4d4;
+            background-color: #1e1e1e;
+            font-size: 13px;
+          }
+          .sidebar-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #3c3c3c;
+          }
+          .sidebar-header h3 {
+            margin: 0;
+            font-size: 13px;
+            word-break: break-all;
+          }
+          .refresh-btn {
+            background: #2d2d2d;
+            color: #cccccc;
+            border: 1px solid #3c3c3c;
+            border-radius: 4px;
+            padding: 4px 8px;
+            cursor: pointer;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+          }
+          .refresh-btn:hover {
+            background: #3c3c3c;
+            color: #ffffff;
+          }
+          .card {
+            background-color: #252526;
+            border: 1px solid #3c3c3c;
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 10px;
+          }
+          .card.warning {
+            border-left: 4px solid #f14c4c;
+          }
+          .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+          }
+          .card-header h4 {
+            margin: 0;
+            color: #569cd6;
+            font-size: 13px;
+            font-weight: 600;
+          }
+          .badge {
+            font-size: 10px;
+            font-weight: 700;
+            padding: 2px 6px;
+            border-radius: 3px;
+            letter-spacing: 0.5px;
+            text-transform: uppercase;
+          }
+          .badge-found {
+            background-color: #1e4620;
+            color: #4ec9b0;
+            border: 1px solid #2e6633;
+          }
+          .badge-inferred {
+            background-color: #3d3200;
+            color: #dcdcaa;
+            border: 1px solid #665400;
+          }
+          .badge-unavailable {
+            background-color: #2d2d2d;
+            color: #808080;
+            border: 1px solid #444444;
+          }
+          .badge-still-loading {
+            background-color: #002b4d;
+            color: #569cd6;
+            border: 1px solid #004b80;
+          }
+          ul {
+            margin: 0;
+            padding-left: 18px;
+          }
+          li {
+            margin-bottom: 4px;
+          }
+          .muted {
+            color: #808080;
+            font-style: italic;
+            margin: 0;
+          }
+          .info-note {
+            margin-top: 6px;
+            font-size: 11px;
+          }
+          code {
+            background: #2d2d2d;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+          }
+          a {
+            color: #3794ff;
+            text-decoration: none;
+          }
+          a:hover {
+            text-decoration: underline;
+          }
+          a.inspect-link {
+            color: #3794ff;
+            text-decoration: none;
+            margin-left: 4px;
+            font-size: 12px;
+          }
+          a.inspect-link:hover {
+            text-decoration: underline;
+          }
         </style>
       </head>
       <body>
-        <h3>Context: <code>${ctx.filePath}</code></h3>
+        <div class="sidebar-header">
+          <div class="file-info">
+            <h3 title="${this.escapeHtml(ctx.filePath)}">Context: <code>${this.escapeHtml(relativeFilePath)}</code></h3>
+          </div>
+          <button id="refresh-btn" class="refresh-btn" onclick="refreshContext()" title="Refresh Context">🔄 Refresh</button>
+        </div>
+
         ${featureHtml}
         ${adrHtml}
         ${prHtml}
         ${commitsHtml}
         ${testsHtml}
         ${astHtml}
+
+        <script>
+          const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+          function refreshContext() {
+            if (vscode) {
+              vscode.postMessage({ command: 'refresh' });
+            }
+          }
+          function openFile(filePath) {
+            if (vscode) {
+              vscode.postMessage({ command: 'openFile', filePath: filePath });
+            }
+          }
+          function openPr(prId, url) {
+            if (vscode) {
+              vscode.postMessage({ command: 'openPr', prId: prId, url: url });
+            }
+          }
+          function openCommit(hash) {
+            if (vscode) {
+              vscode.postMessage({ command: 'openCommit', hash: hash });
+            }
+          }
+        </script>
       </body>
       </html>
     `;

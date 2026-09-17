@@ -55,14 +55,6 @@ export async function mapRelatedTestsAsync(
           });
         }
 
-        // Fallback default test if no explicit test file on disk
-        if (tests.length === 0) {
-          tests.push({
-            file: `test/${baseName}.test.ts`,
-            testName: `should process ${baseName} functionality correctly`,
-          });
-        }
-
         resolve(tests);
       } catch {
         resolve([]);

@@ -244,6 +244,8 @@ export async function parseAstAsync(
         const ddlOperations: Array<{ operation: 'CREATE' | 'ALTER' | 'DROP'; table: string }> = [];
         const seenOps = new Set<string>();
 
+        let source: 'found' | 'inferred' = 'found';
+
         // 1. Extract comment-based feature ownership annotations (@owner, @team, @feature)
         const commentOwnership = extractCommentsOwnership(fileContent);
         let team = commentOwnership.team;
@@ -268,9 +270,9 @@ export async function parseAstAsync(
         // 4. Fallback to path / directory heuristics
         if (!team || !owner || !feature) {
           const pathOwnership = derivePathOwnership(filePath);
-          if (!team) team = pathOwnership.team;
-          if (!owner) owner = pathOwnership.owner;
-          if (!feature) feature = pathOwnership.feature;
+          if (!team) { team = pathOwnership.team; source = 'inferred'; }
+          if (!owner) { owner = pathOwnership.owner; source = 'inferred'; }
+          if (!feature) { feature = pathOwnership.feature; source = 'inferred'; }
         }
 
         const finalFeature = feature || (team ? team.replace(/\s*Team$/, '') : 'General');
@@ -281,6 +283,7 @@ export async function parseAstAsync(
           team: finalTeam,
           owner: finalOwner,
           feature: finalFeature,
+          ...(source === 'inferred' ? { source: 'inferred' } : {}),
         };
 
         function addDdlOp(op: 'CREATE' | 'ALTER' | 'DROP', tbl: string) {

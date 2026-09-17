@@ -2,6 +2,7 @@ export interface FeatureOwnership {
   team: string;
   owner: string;
   feature: string;
+  source?: 'found' | 'inferred';
 }
 
 export interface PRInfo {
@@ -61,6 +62,7 @@ export interface FileContext {
   dbSchemaContext?: DbSchemaContext;
   lastIndexedAt: number;
   contentHash?: string;
+  isIndexing?: boolean;
 }
 
 export interface GitMetadata {

@@ -24,6 +24,7 @@ export class GittedExtension {
   private sqliteCache: SqliteCache;
   private backgroundIndexer: BackgroundIndexer;
   private sidebarProvider: SidebarProvider;
+  private activeFilePath: string | null = null;
   public lastQueryLatencyMs: number = 0;
   public syncSubprocessesCalled: number = 0;
   public syncAstParsesCalled: number = 0;
@@ -38,7 +39,12 @@ export class GittedExtension {
       sqliteCache: this.sqliteCache,
       enableWatchers: true,
     });
-    this.sidebarProvider = new SidebarProvider();
+    this.sidebarProvider = new SidebarProvider(this.workspaceRoot);
+    this.sidebarProvider.onDidReceiveMessage((msg) => {
+      if (msg.command === 'refresh') {
+        this.refreshActiveContext();
+      }
+    });
   }
 
   public async activate(): Promise<void> {
@@ -56,11 +62,13 @@ export class GittedExtension {
    */
   public onDidChangeActiveTextEditor(editor: TextEditor | null): FileContext | null {
     if (!editor || !editor.document || !editor.document.fileName) {
+      this.activeFilePath = null;
       this.sidebarProvider.updateContext(null);
       return null;
     }
 
     const filePath = editor.document.fileName;
+    this.activeFilePath = filePath;
     const startTime = performance.now();
     const currentBranch = this.backgroundIndexer.getCurrentBranch();
 
@@ -81,6 +89,7 @@ export class GittedExtension {
         relatedTests: [],
         adrWarnings: [],
         lastIndexedAt: Date.now(),
+        isIndexing: true,
       };
     }
 
@@ -90,6 +99,15 @@ export class GittedExtension {
     // Update Sidebar View with cached context
     this.sidebarProvider.updateContext(cachedContext);
 
+    return cachedContext;
+  }
+
+  public refreshActiveContext(): FileContext | null {
+    if (!this.activeFilePath) return null;
+    const currentBranch = this.backgroundIndexer.getCurrentBranch();
+    this.backgroundIndexer.indexFileAsync(this.activeFilePath, 'high');
+    const cachedContext = this.sqliteCache.getFileContext(this.activeFilePath, currentBranch);
+    this.sidebarProvider.updateContext(cachedContext);
     return cachedContext;
   }
 
