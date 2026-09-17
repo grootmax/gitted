@@ -9,7 +9,7 @@ export interface ParsedAstResult {
   dbSchemaContext?: DbSchemaContext;
 }
 
-function extractCommentsOwnership(fileContent: string): { team: string; owner: string; feature: string } {
+function extractCommentsOwnership(fileContent: string): { team: string; owner: string; feature: string; source: string } {
   let team = '';
   let owner = '';
   let feature = '';
@@ -38,15 +38,16 @@ function extractCommentsOwnership(fileContent: string): { team: string; owner: s
     }
   }
 
-  return { team, owner, feature };
+  const source = team || owner || feature ? 'file' : '';
+  return { team, owner, feature, source };
 }
 
-function lookupCodeownersOwnership(filePath: string, workspaceRoot?: string): { team: string; owner: string; feature: string } {
+function lookupCodeownersOwnership(filePath: string, workspaceRoot?: string): { team: string; owner: string; feature: string; source: string } {
   let team = '';
   let owner = '';
   let feature = '';
 
-  if (!workspaceRoot) return { team, owner, feature };
+  if (!workspaceRoot) return { team, owner, feature, source: '' };
 
   const codeownersPaths = [
     path.join(workspaceRoot, '.github', 'CODEOWNERS'),
@@ -69,8 +70,8 @@ function lookupCodeownersOwnership(filePath: string, workspaceRoot?: string): { 
           const pattern = parts[0];
           const owners = parts.slice(1);
           if (pattern && owners.length > 0) {
-            const cleanPattern = pattern.replace(/^\//, '').replace(/\/$/, '');
-            if (cleanPattern === '*' || relativePath.includes(cleanPattern)) {
+            const cleanPattern = pattern.replace(/^\//, '').replace(/\*+$/, '').replace(/\/$/, '');
+            if (cleanPattern === '*' || cleanPattern === '' || relativePath.includes(cleanPattern)) {
               const matchedOwner = owners[0].replace(/^@/, '');
               owner = matchedOwner;
               team = `${matchedOwner} Team`;
@@ -83,15 +84,16 @@ function lookupCodeownersOwnership(filePath: string, workspaceRoot?: string): { 
     }
   }
 
-  return { team, owner, feature };
+  const source = team || owner || feature ? 'codeowners' : '';
+  return { team, owner, feature, source };
 }
 
-function lookupFeaturesYmlOwnership(filePath: string, workspaceRoot?: string): { team: string; owner: string; feature: string } {
+function lookupFeaturesYmlOwnership(filePath: string, workspaceRoot?: string): { team: string; owner: string; feature: string; source: string } {
   let team = '';
   let owner = '';
   let feature = '';
 
-  if (!workspaceRoot) return { team, owner, feature };
+  if (!workspaceRoot) return { team, owner, feature, source: '' };
 
   const ymlPaths = [
     path.join(workspaceRoot, '.contextbuilder', 'features.yml'),
@@ -143,73 +145,8 @@ function lookupFeaturesYmlOwnership(filePath: string, workspaceRoot?: string): {
     }
   }
 
-  return { team, owner, feature };
-}
-
-function derivePathOwnership(filePath: string): { team: string; owner: string; feature: string } {
-  let team = '';
-  let owner = '';
-  let feature = '';
-
-  const lowerPath = filePath.toLowerCase().replace(/\\/g, '/');
-
-  if (lowerPath.includes('payment') || lowerPath.includes('checkout') || lowerPath.includes('billing') || lowerPath.includes('stripe') || lowerPath.includes('invoice')) {
-    team = 'Billing Team';
-    owner = 'payment-devs';
-    feature = 'Payment Gateway';
-  } else if (lowerPath.includes('user') || lowerPath.includes('auth') || lowerPath.includes('identity') || lowerPath.includes('login') || lowerPath.includes('session')) {
-    team = 'Identity Team';
-    owner = 'auth-devs';
-    feature = 'User Authentication';
-  } else if (lowerPath.includes('cart') || lowerPath.includes('order') || lowerPath.includes('shipping')) {
-    team = 'Orders Team';
-    owner = 'order-devs';
-    feature = 'Order Management';
-  } else if (lowerPath.includes('search') || lowerPath.includes('catalog') || lowerPath.includes('product')) {
-    team = 'Catalog Team';
-    owner = 'search-devs';
-    feature = 'Product Catalog';
-  } else if (lowerPath.includes('notification') || lowerPath.includes('email') || lowerPath.includes('message')) {
-    team = 'Messaging Team';
-    owner = 'msg-devs';
-    feature = 'Notifications';
-  } else if (lowerPath.includes('admin') || lowerPath.includes('dashboard') || lowerPath.includes('analytics')) {
-    team = 'Admin Team';
-    owner = 'admin-devs';
-    feature = 'Analytics & Admin';
-  } else if (lowerPath.includes('sidebar') || lowerPath.includes('ui') || lowerPath.includes('component')) {
-    team = 'Frontend Team';
-    owner = 'frontend-devs';
-    feature = 'UI & Sidebar';
-  } else if (lowerPath.includes('graph') || lowerPath.includes('cache') || lowerPath.includes('indexer') || lowerPath.includes('parser') || lowerPath.includes('ast') || lowerPath.includes('pipeline') || lowerPath.includes('context')) {
-    team = 'Core Infrastructure';
-    owner = 'platform-devs';
-    feature = 'Core Engine';
-  } else if (lowerPath.includes('db') || lowerPath.includes('schema') || lowerPath.includes('migration') || lowerPath.includes('model')) {
-    team = 'Database Team';
-    owner = 'db-devs';
-    feature = 'Data Persistence';
-  } else if (lowerPath.includes('test') || lowerPath.includes('spec') || lowerPath.includes('benchmark')) {
-    team = 'QA Team';
-    owner = 'qa-devs';
-    feature = 'Testing Framework';
-  } else {
-    // Dynamic folder name extraction fallback
-    const parts = lowerPath.split('/').filter(p => p && !['src', 'lib', 'app', 'pkg', 'dist', 'out', 'internal'].includes(p));
-    if (parts.length > 1) {
-      const folder = parts[0];
-      const capitalized = folder.charAt(0).toUpperCase() + folder.slice(1);
-      feature = capitalized;
-      team = `${capitalized} Team`;
-      owner = `${folder}-devs`;
-    } else {
-      feature = 'Core System';
-      team = 'Core Team';
-      owner = 'dev';
-    }
-  }
-
-  return { team, owner, feature };
+  const source = team || owner || feature ? 'feature_config' : '';
+  return { team, owner, feature, source };
 }
 
 export function isSupportedCodeFile(filePath: string): boolean {
@@ -315,39 +252,32 @@ export async function parseAstAsync(
         let team = commentOwnership.team;
         let owner = commentOwnership.owner;
         let feature = commentOwnership.feature;
+        let source = commentOwnership.source;
 
         // 2. Fallback to .contextbuilder/features.yml if tags missing
         if (!team || !owner || !feature) {
           const ymlOwnership = lookupFeaturesYmlOwnership(filePath, workspaceRoot);
-          if (!team && ymlOwnership.team) team = ymlOwnership.team;
-          if (!owner && ymlOwnership.owner) owner = ymlOwnership.owner;
-          if (!feature && ymlOwnership.feature) feature = ymlOwnership.feature;
+          if (!team && ymlOwnership.team) { team = ymlOwnership.team; if (!source) source = ymlOwnership.source; }
+          if (!owner && ymlOwnership.owner) { owner = ymlOwnership.owner; if (!source) source = ymlOwnership.source; }
+          if (!feature && ymlOwnership.feature) { feature = ymlOwnership.feature; if (!source) source = ymlOwnership.source; }
         }
 
         // 3. Fallback to CODEOWNERS if tags missing
         if (!team || !owner) {
           const coOwnership = lookupCodeownersOwnership(filePath, workspaceRoot);
-          if (!team && coOwnership.team) team = coOwnership.team;
-          if (!owner && coOwnership.owner) owner = coOwnership.owner;
+          if (!team && coOwnership.team) { team = coOwnership.team; if (!source) source = coOwnership.source; }
+          if (!owner && coOwnership.owner) { owner = coOwnership.owner; if (!source) source = coOwnership.source; }
         }
 
-        // 4. Fallback to path / directory heuristics
-        if (!team || !owner || !feature) {
-          const pathOwnership = derivePathOwnership(filePath);
-          if (!team) team = pathOwnership.team;
-          if (!owner) owner = pathOwnership.owner;
-          if (!feature) feature = pathOwnership.feature;
+        let featureOwnershipObj: FeatureOwnership | undefined = undefined;
+        if (team || owner || feature) {
+          featureOwnershipObj = {
+            team: team || undefined,
+            owner: owner || undefined,
+            feature: feature || undefined,
+            source: source || undefined,
+          };
         }
-
-        const finalFeature = feature || (team ? team.replace(/\s*Team$/, '') : 'General');
-        const finalTeam = team || (feature ? `${feature} Team` : 'Core Team');
-        const finalOwner = owner || (feature ? `${feature.toLowerCase().replace(/\s+/g, '-')}-devs` : 'dev');
-
-        const featureOwnershipObj: FeatureOwnership = {
-          team: finalTeam,
-          owner: finalOwner,
-          feature: finalFeature,
-        };
 
         // If file is not a supported code file (e.g. .gitignore, config.json)
         if (!isSupportedCodeFile(filePath)) {

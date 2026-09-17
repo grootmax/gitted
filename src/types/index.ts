@@ -1,7 +1,8 @@
 export interface FeatureOwnership {
-  team: string;
-  owner: string;
-  feature: string;
+  team?: string;
+  owner?: string;
+  feature?: string;
+  source?: 'file' | 'codeowners' | 'feature_config' | string;
 }
 
 export interface PRInfo {
