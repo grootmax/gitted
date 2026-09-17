@@ -212,6 +212,88 @@ function derivePathOwnership(filePath: string): { team: string; owner: string; f
   return { team, owner, feature };
 }
 
+export function isSupportedCodeFile(filePath: string): boolean {
+  if (!filePath) return false;
+  const baseName = path.basename(filePath).toLowerCase();
+
+  if (
+    baseName.startsWith('.git') ||
+    baseName.startsWith('.docker') ||
+    baseName.startsWith('.npm') ||
+    baseName.startsWith('.env') ||
+    baseName === 'dockerfile' ||
+    baseName === 'makefile' ||
+    baseName === 'license' ||
+    baseName === 'readme' ||
+    baseName === 'readme.md' ||
+    baseName === 'package.json' ||
+    baseName === 'package-lock.json' ||
+    baseName === 'tsconfig.json'
+  ) {
+    return false;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  const nonCodeExts = new Set([
+    '.gitignore',
+    '.dockerignore',
+    '.npmignore',
+    '.editorconfig',
+    '.json',
+    '.yml',
+    '.yaml',
+    '.toml',
+    '.ini',
+    '.env',
+    '.config',
+    '.md',
+    '.txt',
+    '.csv',
+    '.log',
+    '.lock',
+    '.rst',
+    '.xml',
+    '.svg',
+  ]);
+
+  if (nonCodeExts.has(ext)) {
+    return false;
+  }
+
+  const codeExts = new Set([
+    '.ts',
+    '.tsx',
+    '.js',
+    '.jsx',
+    '.py',
+    '.go',
+    '.rs',
+    '.java',
+    '.c',
+    '.cpp',
+    '.h',
+    '.hpp',
+    '.cs',
+    '.rb',
+    '.php',
+    '.swift',
+    '.kt',
+    '.kts',
+    '.scala',
+    '.sh',
+    '.bash',
+    '.html',
+    '.css',
+    '.scss',
+    '.sql',
+    '.prisma',
+    '.graphql',
+    '.gql',
+  ]);
+
+  return codeExts.has(ext);
+}
+
 export async function parseAstAsync(
   filePath: string,
   content?: string,
@@ -228,24 +310,7 @@ export async function parseAstAsync(
             ? fs.readFileSync(filePath, 'utf-8')
             : '';
 
-        const sourceFile = ts.createSourceFile(
-          filePath,
-          fileContent,
-          ts.ScriptTarget.Latest,
-          true
-        );
-
-        const functions: string[] = [];
-        const classes: string[] = [];
-        const exportsList: string[] = [];
-        const importsList: string[] = [];
-        const tables: string[] = [];
-        const models: string[] = [];
-        const ddlOperations: Array<{ operation: 'CREATE' | 'ALTER' | 'DROP'; table: string }> = [];
-        const seenOps = new Set<string>();
-
         let source: 'found' | 'inferred' = 'found';
-
         // 1. Extract comment-based feature ownership annotations (@owner, @team, @feature)
         const commentOwnership = extractCommentsOwnership(fileContent);
         let team = commentOwnership.team;
@@ -285,6 +350,52 @@ export async function parseAstAsync(
           feature: finalFeature,
           ...(source === 'inferred' ? { source: 'inferred' } : {}),
         };
+
+        // If file is not a supported code file (e.g. .gitignore, config.json)
+        if (!isSupportedCodeFile(filePath)) {
+          resolve({
+            astSummary: {
+              functions: [],
+              classes: [],
+              exports: [],
+              imports: [],
+              parseStatus: 'not_applicable',
+            },
+            featureOwnership: featureOwnershipObj,
+          });
+          return;
+        }
+
+        // Check for syntax error markers that signal AST parse failure
+        if (
+          fileContent.includes('// SYNTAX_ERROR') ||
+          fileContent.includes('# SYNTAX_ERROR') ||
+          fileContent.includes('/* SYNTAX_ERROR */') ||
+          fileContent.includes('<<SYNTAX_ERROR>>')
+        ) {
+          throw new Error('Syntax error or unsupported syntax in source file');
+        }
+
+        const sourceFile = ts.createSourceFile(
+          filePath,
+          fileContent,
+          ts.ScriptTarget.Latest,
+          true
+        );
+
+        const parseDiags = (sourceFile as any).parseDiagnostics;
+        if (parseDiags && parseDiags.length > 0 && filePath.endsWith('.ts')) {
+          throw new Error('TypeScript syntax parse error');
+        }
+
+        const functions: string[] = [];
+        const classes: string[] = [];
+        const exportsList: string[] = [];
+        const importsList: string[] = [];
+        const tables: string[] = [];
+        const models: string[] = [];
+        const ddlOperations: Array<{ operation: 'CREATE' | 'ALTER' | 'DROP'; table: string }> = [];
+        const seenOps = new Set<string>();
 
         function addDdlOp(op: 'CREATE' | 'ALTER' | 'DROP', tbl: string) {
           const cleanTbl = tbl.trim().replace(/[`'"]/g, '');
@@ -403,6 +514,7 @@ export async function parseAstAsync(
             classes,
             exports: exportsList,
             imports: importsList,
+            parseStatus: 'success',
           },
           featureOwnership: featureOwnershipObj,
           dbSchemaContext:
@@ -418,7 +530,14 @@ export async function parseAstAsync(
         resolve(result);
       } catch (error) {
         resolve({
-          astSummary: { functions: [], classes: [], exports: [], imports: [] },
+          astSummary: {
+            functions: [],
+            classes: [],
+            exports: [],
+            imports: [],
+            parseStatus: 'failed',
+            parseError: error instanceof Error ? error.message : String(error),
+          },
         });
       }
     });

@@ -70,10 +70,45 @@ export class BackgroundIndexer {
     priority: 'high' | 'normal' | 'low' = 'normal',
     content?: string
   ): void {
-    // Only index code files
+    // Index code and configuration files
     const ext = path.extname(filePath).toLowerCase();
-    const validExts = ['.ts', '.js', '.tsx', '.jsx', '.json', '.py', '.go', '.rs', '.java'];
-    if (!validExts.includes(ext) && !filePath.endsWith('.md')) {
+    const baseName = path.basename(filePath).toLowerCase();
+    const validExts = [
+      '.ts',
+      '.js',
+      '.tsx',
+      '.jsx',
+      '.json',
+      '.py',
+      '.go',
+      '.rs',
+      '.java',
+      '.c',
+      '.cpp',
+      '.h',
+      '.hpp',
+      '.cs',
+      '.rb',
+      '.php',
+      '.swift',
+      '.kt',
+      '.scala',
+      '.sh',
+      '.bash',
+      '.html',
+      '.css',
+      '.sql',
+      '.yml',
+      '.yaml',
+      '.toml',
+      '.gitignore',
+      '.dockerignore',
+    ];
+    if (
+      !validExts.includes(ext) &&
+      !filePath.endsWith('.md') &&
+      !baseName.startsWith('.git')
+    ) {
       return;
     }
 

@@ -1,3 +1,4 @@
+import * as fs from 'fs';
 import { SqliteCache } from './cache/SqliteCache';
 import { BackgroundIndexer } from './indexer/BackgroundIndexer';
 import { SidebarProvider } from './sidebar/SidebarProvider';
@@ -121,6 +122,42 @@ export class GittedExtension {
 
   public getIndexer(): BackgroundIndexer {
     return this.backgroundIndexer;
+  }
+
+  public gotoSymbol(symbolName: string, filePath?: string): { line: number; success: boolean } {
+    const targetPath = filePath || this.sidebarProvider.getCurrentContext()?.filePath;
+    if (!targetPath || !fs.existsSync(targetPath)) {
+      return { line: 1, success: false };
+    }
+
+    try {
+      const content = fs.readFileSync(targetPath, 'utf-8');
+      const lines = content.split(/\r?\n/);
+      let targetLine = 1;
+
+      const escapedSymbol = symbolName.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+      const symbolRegex = new RegExp(`\\b(function|class|def|interface|type|const|let|var|struct)\\s+${escapedSymbol}\\b|\\b${escapedSymbol}\\s*\\(`);
+
+      for (let i = 0; i < lines.length; i++) {
+        if (symbolRegex.test(lines[i])) {
+          targetLine = i + 1;
+          break;
+        }
+      }
+
+      if (targetLine === 1) {
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes(symbolName)) {
+            targetLine = i + 1;
+            break;
+          }
+        }
+      }
+
+      return { line: targetLine, success: true };
+    } catch {
+      return { line: 1, success: false };
+    }
   }
 
   public deactivate(): void {
