@@ -17,6 +17,7 @@ export interface CommitInfo {
   author: string;
   message: string;
   date: string;
+  url?: string;
 }
 
 export interface RelatedTest {
