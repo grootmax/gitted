@@ -83,20 +83,52 @@ export class SidebarProvider {
           </div>`
         : `<div class="card"><h4>Related Tests</h4><p class="muted">No related tests found.</p></div>`;
 
-    const adrHtml =
-      ctx.adrWarnings && ctx.adrWarnings.length > 0
-        ? `<div class="card warning">
-            <h4>ADR Warnings</h4>
-            <ul>
-              ${ctx.adrWarnings
-                .map(
-                  (adr: ADRWarning) =>
-                    `<li><strong style="color:#f14c4c;">[${adr.id}] ${adr.title}:</strong> ${adr.warning}</li>`
-                )
-                .join('')}
-            </ul>
-          </div>`
-        : `<div class="card"><h4>ADR Warnings</h4><p class="muted">No ADR warnings for this file.</p></div>`;
+    const realAdrs = (ctx.adrWarnings || []).filter(
+      (adr: ADRWarning) => adr.id !== 'NO_ADR_DOCS' && adr.id !== 'NO_ADR_MATCH'
+    );
+    const hasAdrDocsSentinel = ctx.adrWarnings?.find((adr) => adr.id === 'NO_ADR_DOCS');
+    const hasNoMatchSentinel = ctx.adrWarnings?.find((adr) => adr.id === 'NO_ADR_MATCH');
+
+    let adrHtml = '';
+
+    if (realAdrs.length === 0) {
+      if (hasAdrDocsSentinel || ctx.adrWarnings?.some((a) => a.hasAdrDocs === false)) {
+        adrHtml = `<div class="card"><h4>Architecture Decisions</h4><p class="muted">No ADR documents found in project.</p></div>`;
+      } else {
+        adrHtml = `<div class="card"><h4>Architecture Decisions</h4><p class="muted">No ADR matches this file.</p></div>`;
+      }
+    } else {
+      const usefulAdrs = realAdrs.filter((a) => !a.needsAttention && a.status !== 'Stale Anchor');
+      const attentionAdrs = realAdrs.filter((a) => a.needsAttention || a.status === 'Stale Anchor');
+
+      const usefulList = usefulAdrs
+        .map(
+          (adr: ADRWarning) =>
+            `<li><strong style="color:#4ec9b0;">[${adr.id}] ${adr.title}:</strong> ${adr.warning}</li>`
+        )
+        .join('');
+
+      const attentionList = attentionAdrs
+        .map(
+          (adr: ADRWarning) =>
+            `<li><strong style="color:#f14c4c;">⚠️ [${adr.id}] ${adr.title} (${adr.status}):</strong> ${adr.warning}</li>`
+        )
+        .join('');
+
+      const statusMsg =
+        attentionAdrs.length === 0
+          ? `<p class="muted status-ok" style="color:#89d185; margin-top:6px;">✓ Matching ADR checked with no problem found.</p>`
+          : '';
+
+      adrHtml = `
+        <div class="card ${attentionAdrs.length > 0 ? 'warning' : ''}">
+          <h4>Architecture Decisions</h4>
+          ${usefulList ? `<ul>${usefulList}</ul>` : ''}
+          ${attentionList ? `<ul style="margin-top:4px;">${attentionList}</ul>` : ''}
+          ${statusMsg}
+        </div>
+      `;
+    }
 
     const astHtml = ctx.astSummary
       ? `<div class="card">

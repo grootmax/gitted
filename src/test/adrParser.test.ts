@@ -104,7 +104,6 @@ Old Stripe rule.
     fs.writeFileSync(sourcePath, sourceContent);
 
     const warnings = await parseAdrAsync(sourcePath, tmpDir, sourceContent);
-    expect(warnings.length).toBe(1); // Default fallback ADR-004 since warnings.length was 0 before fallback or 0 active ADRs
     const adr24 = warnings.find((w) => w.id === 'ADR-024');
     expect(adr24).toBeUndefined();
   });
@@ -144,5 +143,55 @@ status: Accepted
     expect(warnings.length).toBe(1);
     expect(warnings[0].id).toBe('ADR-009');
     expect(warnings[0].warning).toContain('Orders must be processed asynchronously');
+  });
+
+  it('returns NO_ADR_DOCS sentinel when project has no ADR documents', async () => {
+    // Delete the empty docs/adr folder created in beforeEach
+    fs.rmSync(path.join(tmpDir, 'docs'), { recursive: true, force: true });
+
+    const sourcePath = path.join(tmpDir, 'src', 'payment.ts');
+    const sourceContent = `export function processPayment() {}`;
+    fs.writeFileSync(sourcePath, sourceContent);
+
+    const warnings = await parseAdrAsync(sourcePath, tmpDir, sourceContent);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].id).toBe('NO_ADR_DOCS');
+    expect(warnings[0].hasAdrDocs).toBe(false);
+  });
+
+  it('returns NO_ADR_MATCH sentinel when project has ADR documents but none match open file', async () => {
+    const adrPath = path.join(tmpDir, 'docs', 'adr', '0099-unrelated.md');
+    fs.writeFileSync(
+      adrPath,
+      `---
+id: ADR-099
+title: Unrelated ADR
+status: Accepted
+anchors:
+  - file: src/other.ts
+---
+Decision for other.ts
+`
+    );
+
+    const sourcePath = path.join(tmpDir, 'src', 'payment.ts');
+    const sourceContent = `export function processPayment() {}`;
+    fs.writeFileSync(sourcePath, sourceContent);
+
+    const warnings = await parseAdrAsync(sourcePath, tmpDir, sourceContent);
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].id).toBe('NO_ADR_MATCH');
+    expect(warnings[0].hasAdrDocs).toBe(true);
+  });
+
+  it('never generates a warning solely because a filename contains "payment"', async () => {
+    // Project with no matching ADR for payment_gateway.ts
+    const sourcePath = path.join(tmpDir, 'src', 'payment_gateway.ts');
+    const sourceContent = `export function charge() {}`;
+    fs.writeFileSync(sourcePath, sourceContent);
+
+    const warnings = await parseAdrAsync(sourcePath, tmpDir, sourceContent);
+    const adr4 = warnings.find((w) => w.id === 'ADR-004');
+    expect(adr4).toBeUndefined();
   });
 });

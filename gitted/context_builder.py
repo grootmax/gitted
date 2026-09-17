@@ -105,6 +105,8 @@ class ContextBuilder:
             for adr in context["active_adrs"]:
                 badge = f"[{adr.status_badge}]"
                 lines.append(f"  • {badge} {adr.id}: {adr.title}")
+            if not context["stale_adrs"]:
+                lines.append("  ✓ Matching ADR checked with no problem found.")
 
         # 3. Summary of suppressed ADRs
         if context["suppressed_adrs"]:
@@ -113,7 +115,10 @@ class ContextBuilder:
                 lines.append(f"  - [{adr.status_badge}] {adr.id}: {adr.title}")
 
         if not context["active_adrs"] and not context["stale_adrs"] and not context["suppressed_adrs"]:
-            lines.append("\nNo active architectural decision records associated with this file.")
+            if not self.adrs:
+                lines.append("\nNo ADR documents found in project.")
+            else:
+                lines.append("\nNo ADR matches this file.")
 
         return "\n".join(lines)
 

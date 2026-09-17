@@ -226,9 +226,12 @@ export async function parseAdrAsync(
             ? fs.readFileSync(filePath, 'utf-8')
             : '';
 
+        let totalProjectAdrs = 0;
+
         // 1. Inline @adr annotations in source code
         const adrMatches = fileContent.match(/\/\/\s*@adr\s+([A-Z0-9-]+):\s*(.+)/gi);
         if (adrMatches) {
+          totalProjectAdrs += adrMatches.length;
           for (const match of adrMatches) {
             const parts = match.replace(/\/\/\s*@adr\s+/i, '').split(':');
             const id = parts[0]?.trim() || 'ADR-001';
@@ -239,6 +242,8 @@ export async function parseAdrAsync(
               status: 'Active',
               warning: warningText,
               filePath,
+              needsAttention: false,
+              hasAdrDocs: true,
             });
           }
         }
@@ -255,6 +260,7 @@ export async function parseAdrAsync(
             const adrFiles = fs.readdirSync(adrDir);
             for (const file of adrFiles) {
               if (file.endsWith('.md')) {
+                totalProjectAdrs++;
                 const fullAdrPath = path.join(adrDir, file);
                 const adrRawContent = fs.readFileSync(fullAdrPath, 'utf-8');
                 const parsedAdr = parseYamlFrontmatter(adrRawContent, file);
@@ -275,12 +281,14 @@ export async function parseAdrAsync(
 
                 if (matches) {
                   let status = parsedAdr.status;
+                  let needsAttention = false;
                   let warningText = `Referenced in architectural decision record: ${parsedAdr.title}`;
 
                   // Check if symbol anchor is defined and missing in source file
                   if (matchedAnchor?.symbol && fileContent) {
                     if (!fileContent.includes(matchedAnchor.symbol)) {
                       status = 'Stale Anchor';
+                      needsAttention = true;
                       warningText = `⚠️ Stale Anchor: Symbol '${matchedAnchor.symbol}' not found in file. Action required: Update code anchor, declare replacement ADR, or deprecate record.`;
                     }
                   }
@@ -289,7 +297,7 @@ export async function parseAdrAsync(
                   const rationaleMatch = parsedAdr.body.match(
                     /(?:Rationale|Context|Decision):\s*([^\n]+)/i
                   );
-                  if (rationaleMatch && rationaleMatch[1].trim()) {
+                  if (rationaleMatch && rationaleMatch[1].trim() && !needsAttention) {
                     warningText = rationaleMatch[1].trim();
                   }
 
@@ -299,6 +307,8 @@ export async function parseAdrAsync(
                     status,
                     warning: warningText,
                     filePath: fullAdrPath,
+                    needsAttention,
+                    hasAdrDocs: true,
                   });
                 }
               }
@@ -306,18 +316,26 @@ export async function parseAdrAsync(
           }
         }
 
-        // Default ADR warning fallback if file matches sensitive modules like payment/security and no ADR found yet
-        const basename = path.basename(filePath).toLowerCase();
-        if (
-          warnings.length === 0 &&
-          (basename.includes('payment') || basename.includes('auth'))
-        ) {
-          warnings.push({
-            id: 'ADR-004',
-            title: 'ADR-004: Payment Processing Idempotency',
-            status: 'Accepted',
-            warning: 'All payment mutations must include an idempotency key header.',
-          });
+        if (warnings.length === 0) {
+          if (totalProjectAdrs === 0) {
+            warnings.push({
+              id: 'NO_ADR_DOCS',
+              title: 'No ADR Documents',
+              status: 'None',
+              warning: 'No ADR documents found in project.',
+              hasAdrDocs: false,
+              needsAttention: false,
+            });
+          } else {
+            warnings.push({
+              id: 'NO_ADR_MATCH',
+              title: 'No ADR Match',
+              status: 'None',
+              warning: 'No ADR matches this file.',
+              hasAdrDocs: true,
+              needsAttention: false,
+            });
+          }
         }
 
         resolve(warnings);
