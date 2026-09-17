@@ -31,6 +31,8 @@ export interface ADRWarning {
   status: string;
   warning: string;
   filePath?: string;
+  needsAttention?: boolean;
+  hasAdrDocs?: boolean;
 }
 
 export interface ASTNodeSummary {

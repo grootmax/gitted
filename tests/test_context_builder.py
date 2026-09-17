@@ -113,3 +113,43 @@ def test_render_adr_detail():
     assert "# ADR-024: Direct Stripe Integration" in detail
     assert "**Status:** [Superseded by ADR-082]" in detail
     assert "**Superseded By:** ADR-082" in detail
+
+
+def test_context_builder_no_adr_docs():
+    builder = ContextBuilder(adrs=[])
+    panel = builder.render_before_you_change_panel("src/payment.py")
+    assert "No ADR documents found in project." in panel
+
+
+def test_context_builder_no_adr_match():
+    adr = ADR(
+        id="ADR-001",
+        title="Unrelated Architecture",
+        status=ADRStatus.ACCEPTED,
+        anchors=[CodeAnchor("src/other.py")]
+    )
+    builder = ContextBuilder(adrs=[adr])
+    panel = builder.render_before_you_change_panel("src/payment.py")
+    assert "No ADR matches this file." in panel
+
+
+def test_context_builder_matching_adr_checked_ok():
+    with tempfile.TemporaryDirectory() as repo_dir:
+        src_dir = os.path.join(repo_dir, "src")
+        os.makedirs(src_dir, exist_ok=True)
+        py_file = os.path.join(src_dir, "payment.py")
+        with open(py_file, "w") as f:
+            f.write("def process_payment(): pass\n")
+
+        adr = ADR(
+            id="ADR-004",
+            title="Payment Processing Idempotency",
+            status=ADRStatus.ACCEPTED,
+            anchors=[CodeAnchor("src/payment.py", "process_payment")]
+        )
+        indexer = ASTIndexer(repo_dir)
+        builder = ContextBuilder(adrs=[adr], indexer=indexer)
+        panel = builder.render_before_you_change_panel("src/payment.py")
+        assert "ACTIVE ARCHITECTURAL DECISIONS" in panel
+        assert "Matching ADR checked with no problem found." in panel
+
