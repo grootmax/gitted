@@ -77,11 +77,20 @@ export class SidebarProvider {
             <h4>Related Tests</h4>
             <ul>
               ${ctx.relatedTests
-                .map((t: RelatedTest) => `<li><code>${t.file}</code> - ${t.testName}</li>`)
+                .map(
+                  (t: RelatedTest) =>
+                    `<li>
+                      <code>${t.file}</code> - ${t.testName}
+                      <span class="test-actions">
+                        <button class="test-btn" onclick="openTest('${t.file}')">Open</button>
+                        <button class="test-btn" onclick="runTest('${t.file}')">Run</button>
+                      </span>
+                    </li>`
+                )
                 .join('')}
             </ul>
           </div>`
-        : `<div class="card"><h4>Related Tests</h4><p class="muted">No related tests found.</p></div>`;
+        : `<div class="card"><h4>Related Tests</h4><p class="muted">No related test found.</p></div>`;
 
     const realAdrs = (ctx.adrWarnings || []).filter(
       (adr: ADRWarning) => adr.id !== 'NO_ADR_DOCS' && adr.id !== 'NO_ADR_MATCH'
@@ -153,6 +162,9 @@ export class SidebarProvider {
           code { background: #2d2d2d; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
           a.inspect-link { color: #3794ff; text-decoration: none; margin-left: 4px; font-size: 12px; }
           a.inspect-link:hover { text-decoration: underline; }
+          .test-actions { margin-left: 6px; display: inline-block; }
+          .test-btn { background: #0e639c; color: #ffffff; border: none; border-radius: 2px; padding: 2px 6px; font-size: 11px; cursor: pointer; margin-right: 2px; }
+          .test-btn:hover { background: #1177bb; }
         </style>
       </head>
       <body>
@@ -163,6 +175,15 @@ export class SidebarProvider {
         ${commitsHtml}
         ${testsHtml}
         ${astHtml}
+        <script>
+          const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+          function openTest(file) {
+            if (vscode) vscode.postMessage({ command: 'open', file: file });
+          }
+          function runTest(file) {
+            if (vscode) vscode.postMessage({ command: 'run', file: file });
+          }
+        </script>
       </body>
       </html>
     `;
