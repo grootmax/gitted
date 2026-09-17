@@ -1,10 +1,15 @@
 import { FileContext, PRInfo, CommitInfo, RelatedTest, ADRWarning } from '../types';
+import { isSupportedCodeFile } from '../indexer/parsers/astParser';
 
 export class SidebarProvider {
   private currentContext: FileContext | null = null;
 
   public updateContext(context: FileContext | null): void {
     this.currentContext = context;
+  }
+
+  public getCurrentContext(): FileContext | null {
+    return this.currentContext;
   }
 
   public renderHtml(): string {
@@ -130,13 +135,52 @@ export class SidebarProvider {
       `;
     }
 
-    const astHtml = ctx.astSummary
-      ? `<div class="card">
-          <h4>AST Node Summary</h4>
-          <p><strong>Functions:</strong> ${ctx.astSummary.functions.join(', ') || 'None'}</p>
-          <p><strong>Classes:</strong> ${ctx.astSummary.classes.join(', ') || 'None'}</p>
-        </div>`
-      : '';
+    const isCode = isSupportedCodeFile(ctx.filePath);
+    const astSummary = ctx.astSummary;
+
+    let astHtml = '';
+    if (!isCode || astSummary?.parseStatus === 'not_applicable') {
+      astHtml = `
+        <div class="card">
+          <h4>Functions & Classes Summary</h4>
+          <p class="muted">Not applicable</p>
+        </div>
+      `;
+    } else if (astSummary?.parseStatus === 'failed') {
+      astHtml = `
+        <div class="card warning">
+          <h4>Functions & Classes Summary</h4>
+          <p style="color: #f14c4c; margin: 0;">Parsing failed for this file.</p>
+        </div>
+      `;
+    } else if (astSummary) {
+      const renderSymbolLinks = (items: string[], kind: 'function' | 'class') => {
+        if (!items || items.length === 0) return 'None';
+        return items
+          .map(
+            (item) =>
+              `<a href="command:gitted.gotoSymbol?${encodeURIComponent(
+                JSON.stringify([item, ctx.filePath])
+              )}" onclick="gotoSymbol('${item}', '${ctx.filePath}')" class="symbol-link" data-symbol="${item}" data-kind="${kind}">${item}</a>`
+          )
+          .join(', ');
+      };
+
+      astHtml = `
+        <div class="card">
+          <h4>Functions & Classes Summary</h4>
+          <p><strong>Functions:</strong> ${renderSymbolLinks(astSummary.functions, 'function')}</p>
+          <p><strong>Classes:</strong> ${renderSymbolLinks(astSummary.classes, 'class')}</p>
+        </div>
+      `;
+    } else {
+      astHtml = `
+        <div class="card">
+          <h4>Functions & Classes Summary</h4>
+          <p class="muted">Not applicable</p>
+        </div>
+      `;
+    }
 
     return `
       <!DOCTYPE html>
@@ -153,6 +197,8 @@ export class SidebarProvider {
           code { background: #2d2d2d; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
           a.inspect-link { color: #3794ff; text-decoration: none; margin-left: 4px; font-size: 12px; }
           a.inspect-link:hover { text-decoration: underline; }
+          .symbol-link { color: #4ec9b0; text-decoration: none; font-family: monospace; font-weight: 500; cursor: pointer; }
+          .symbol-link:hover { text-decoration: underline; color: #64d1b8; }
         </style>
       </head>
       <body>
@@ -163,6 +209,14 @@ export class SidebarProvider {
         ${commitsHtml}
         ${testsHtml}
         ${astHtml}
+        <script>
+          const vscode = typeof acquireVsCodeApi === 'function' ? acquireVsCodeApi() : null;
+          function gotoSymbol(symbol, filePath) {
+            if (vscode) {
+              vscode.postMessage({ command: 'gotoSymbol', symbol: symbol, filePath: filePath });
+            }
+          }
+        </script>
       </body>
       </html>
     `;

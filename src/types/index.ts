@@ -41,6 +41,8 @@ export interface ASTNodeSummary {
   classes: string[];
   exports: string[];
   imports: string[];
+  parseStatus?: 'success' | 'failed' | 'not_applicable';
+  parseError?: string;
 }
 
 export interface DbSchemaContext {
