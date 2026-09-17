@@ -2,6 +2,53 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { RelatedTest } from '../../types';
 
+export function isSourceFile(filePath: string): boolean {
+  if (!filePath) return false;
+  const fileName = path.basename(filePath);
+
+  // Dotfiles like .gitignore, .env, .eslintrc, .prettierrc are not source files
+  if (fileName.startsWith('.')) {
+    return false;
+  }
+
+  const ext = path.extname(filePath).toLowerCase();
+  if (!ext) {
+    // Files without extension like LICENSE, Dockerfile, Makefile are not source files
+    return false;
+  }
+
+  const SOURCE_EXTENSIONS = new Set([
+    '.ts',
+    '.tsx',
+    '.js',
+    '.jsx',
+    '.mjs',
+    '.cjs',
+    '.py',
+    '.java',
+    '.go',
+    '.rs',
+    '.rb',
+    '.c',
+    '.cpp',
+    '.cc',
+    '.cxx',
+    '.h',
+    '.hpp',
+    '.cs',
+    '.php',
+    '.swift',
+    '.kt',
+    '.scala',
+    '.sh',
+    '.bash',
+    '.vue',
+    '.svelte',
+  ]);
+
+  return SOURCE_EXTENSIONS.has(ext);
+}
+
 export async function mapRelatedTestsAsync(
   filePath: string,
   workspaceRoot: string
@@ -9,10 +56,19 @@ export async function mapRelatedTestsAsync(
   return new Promise((resolve) => {
     setImmediate(() => {
       try {
+        if (!isSourceFile(filePath)) {
+          resolve([]);
+          return;
+        }
+
         const tests: RelatedTest[] = [];
-        const ext = path.extname(filePath);
-        const dir = path.dirname(filePath);
-        const baseName = path.basename(filePath, ext);
+        const absFilePath = path.isAbsolute(filePath)
+          ? filePath
+          : path.join(workspaceRoot, filePath);
+
+        const ext = path.extname(absFilePath);
+        const dir = path.dirname(absFilePath);
+        const baseName = path.basename(absFilePath, ext);
 
         // Standard naming patterns for related tests
         const candidatePaths = [
@@ -20,8 +76,12 @@ export async function mapRelatedTestsAsync(
           path.join(dir, `${baseName}.spec${ext}`),
           path.join(dir, '__tests__', `${baseName}.test${ext}`),
           path.join(dir, '__tests__', `${baseName}.spec${ext}`),
+          path.join(dir, `test_${baseName}${ext}`),
+          path.join(dir, `${baseName}_test${ext}`),
           path.join(workspaceRoot, 'test', `${baseName}.test${ext}`),
           path.join(workspaceRoot, 'tests', `${baseName}.test${ext}`),
+          path.join(workspaceRoot, 'tests', `test_${baseName}${ext}`),
+          path.join(workspaceRoot, 'tests', `${baseName}_test${ext}`),
         ];
 
         for (const testPath of candidatePaths) {
@@ -32,35 +92,42 @@ export async function mapRelatedTestsAsync(
               for (const match of testMatches) {
                 const testNameMatch = match.match(/['"`](.*?)['"`]/);
                 if (testNameMatch && testNameMatch[1]) {
-                  tests.push({
-                    file: path.relative(workspaceRoot, testPath) || testPath,
-                    testName: testNameMatch[1],
-                  });
+                  const relPath = path.relative(workspaceRoot, testPath) || testPath;
+                  if (!tests.some((t) => t.file === relPath && t.testName === testNameMatch[1])) {
+                    tests.push({
+                      file: relPath,
+                      testName: testNameMatch[1],
+                    });
+                  }
                 }
               }
             } else {
-              tests.push({
-                file: path.relative(workspaceRoot, testPath) || testPath,
-                testName: `Suite for ${baseName}`,
-              });
+              const relPath = path.relative(workspaceRoot, testPath) || testPath;
+              if (!tests.some((t) => t.file === relPath)) {
+                tests.push({
+                  file: relPath,
+                  testName: `Suite for ${baseName}`,
+                });
+              }
             }
           }
         }
 
-        // If file is itself a test file
-        if (filePath.includes('.test.') || filePath.includes('.spec.')) {
-          tests.push({
-            file: path.relative(workspaceRoot, filePath) || filePath,
-            testName: `Self Test File`,
-          });
-        }
-
-        // Fallback default test if no explicit test file on disk
-        if (tests.length === 0) {
-          tests.push({
-            file: `test/${baseName}.test.ts`,
-            testName: `should process ${baseName} functionality correctly`,
-          });
+        // If file is itself a test file and exists on disk
+        if (
+          (absFilePath.includes('.test.') ||
+            absFilePath.includes('.spec.') ||
+            absFilePath.includes('test_') ||
+            absFilePath.includes('_test.')) &&
+          fs.existsSync(absFilePath)
+        ) {
+          const relPath = path.relative(workspaceRoot, absFilePath) || absFilePath;
+          if (!tests.some((t) => t.file === relPath)) {
+            tests.push({
+              file: relPath,
+              testName: `Self Test File`,
+            });
+          }
         }
 
         resolve(tests);
@@ -70,3 +137,4 @@ export async function mapRelatedTestsAsync(
     });
   });
 }
+
