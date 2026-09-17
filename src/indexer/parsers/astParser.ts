@@ -247,7 +247,6 @@ export async function parseAstAsync(
             ? fs.readFileSync(filePath, 'utf-8')
             : '';
 
-        let source: 'found' | 'inferred' = 'found';
         // 1. Extract comment-based feature ownership annotations (@owner, @team, @feature)
         const commentOwnership = extractCommentsOwnership(fileContent);
         let team = commentOwnership.team;
@@ -270,24 +269,15 @@ export async function parseAstAsync(
           if (!owner && coOwnership.owner) { owner = coOwnership.owner; if (!source) source = coOwnership.source; }
         }
 
-        // 4. Fallback to path / directory heuristics
-        if (!team || !owner || !feature) {
-          const pathOwnership = derivePathOwnership(filePath);
-          if (!team) { team = pathOwnership.team; source = 'inferred'; }
-          if (!owner) { owner = pathOwnership.owner; source = 'inferred'; }
-          if (!feature) { feature = pathOwnership.feature; source = 'inferred'; }
+        let featureOwnershipObj: FeatureOwnership | undefined = undefined;
+        if (team || owner || feature) {
+          featureOwnershipObj = {
+            team: team || undefined,
+            owner: owner || undefined,
+            feature: feature || undefined,
+            source: source || undefined,
+          };
         }
-
-        const finalFeature = feature || (team ? team.replace(/\s*Team$/, '') : 'General');
-        const finalTeam = team || (feature ? `${feature} Team` : 'Core Team');
-        const finalOwner = owner || (feature ? `${feature.toLowerCase().replace(/\s+/g, '-')}-devs` : 'dev');
-
-        const featureOwnershipObj: FeatureOwnership = {
-          team: finalTeam,
-          owner: finalOwner,
-          feature: finalFeature,
-          ...(source === 'inferred' ? { source: 'inferred' } : {}),
-        };
 
         // If file is not a supported code file (e.g. .gitignore, config.json)
         if (!isSupportedCodeFile(filePath)) {

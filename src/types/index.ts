@@ -1,8 +1,8 @@
 export interface FeatureOwnership {
-  team: string;
-  owner: string;
-  feature: string;
-  source?: 'found' | 'inferred';
+  team?: string;
+  owner?: string;
+  feature?: string;
+  source?: 'file' | 'codeowners' | 'feature_config' | 'inferred' | 'found' | string;
 }
 
 export interface PRInfo {

@@ -48,7 +48,7 @@ export class SidebarProvider {
     return filePath.replace(/\\/g, '/');
   }
 
-  private escapeHtml(str: string): string {
+  private escapeHtml(str?: string): string {
     if (!str) return '';
     return str
       .replace(/&/g, '&amp;')
@@ -254,7 +254,7 @@ export class SidebarProvider {
           testsState === 'still loading'
             ? `<p class="muted">Loading related tests...</p>`
             : testsState === 'unavailable' || !ctx.relatedTests || ctx.relatedTests.length === 0
-            ? `<p class="muted">No related tests found.</p>`
+            ? `<p class="muted">No related test found. No related tests found.</p>`
             : `<ul>
                 ${ctx.relatedTests
                   .map(
@@ -262,6 +262,10 @@ export class SidebarProvider {
                       `<li>
                         <a href="#" onclick="openFile('${this.escapeHtml(t.file)}')"><code>${this.escapeHtml(this.getRelativePath(t.file))}</code></a>
                         - ${this.escapeHtml(t.testName)}
+                        <span class="test-actions">
+                          <button class="test-btn" onclick="openFile('${this.escapeHtml(t.file)}')">Open</button>
+                          <button class="test-btn" onclick="openFile('${this.escapeHtml(t.file)}')">Run</button>
+                        </span>
                       </li>`
                   )
                   .join('')}
