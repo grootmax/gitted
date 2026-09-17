@@ -1,4 +1,5 @@
 import { CodeGraph } from '../graph/codeGraph.js';
+import { isSourceFile } from '../indexer/parsers/testMapper.js';
 import {
   BeforeYouChangeThisViewResult,
   ChangeRadiusViewResult,
@@ -75,6 +76,15 @@ export class ContextBuilderViewRenderer {
    * Renders the Related Tests view for a target file.
    */
   public renderRelatedTestsView(graph: CodeGraph, targetFile: string): RelatedTestViewResult {
+    if (!isSourceFile(targetFile)) {
+      return {
+        targetFile,
+        testFiles: [],
+        hasDegradedNodes: false,
+        summaryWarning: undefined,
+      };
+    }
+
     const dependents = graph.getDependents(targetFile);
     const allNodes = graph.getAllNodes();
 
