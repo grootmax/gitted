@@ -45,17 +45,18 @@ describe('gitParser and SidebarProvider PR History tests', () => {
     expect(res.prHistory.some((pr) => pr.id === '#99')).toBe(true);
   });
 
-  it('renders commit history fallback in SidebarProvider if prHistory is empty', () => {
+  it('renders File Commits and "No linked PR found" in SidebarProvider if prHistory is empty', () => {
     const provider = new SidebarProvider();
     const context: FileContext = {
       filePath: 'src/service.ts',
       prHistory: [],
       commitHistory: [
         {
-          hash: 'a1b2c3d',
+          hash: '1077cff',
           author: 'Alice',
           message: 'feat: add payment gateway',
           date: '2026-09-15',
+          url: 'https://github.com/commit/1077cff',
         },
       ],
       relatedTests: [],
@@ -66,9 +67,20 @@ describe('gitParser and SidebarProvider PR History tests', () => {
     provider.updateContext(context);
     const html = provider.renderHtml();
 
-    expect(html).toContain('PR & Commit History');
-    expect(html).toContain('a1b2c3d');
+    expect(html).toContain('File Commits');
+    expect(html).toContain('No linked PR found');
+    expect(html).toContain('1077cff');
     expect(html).toContain('feat: add payment gateway');
-    expect(html).not.toContain('No related PR history found.');
+    expect(html).toContain('Inspect change');
+    expect(html).toContain('https://github.com/commit/1077cff');
+  });
+
+  it('does not synthesize PR entries from commits when no PR references exist', async () => {
+    const testFile = path.join(tmpDir, 'service.ts');
+    fs.writeFileSync(testFile, 'export const a = 1;');
+
+    const res = await parseGitAsync(testFile, tmpDir);
+    // Since tmpDir is a fresh dir without PR references, prHistory should be empty
+    expect(res.prHistory).toEqual([]);
   });
 });

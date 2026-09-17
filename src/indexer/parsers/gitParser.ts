@@ -68,6 +68,7 @@ export async function parseGitAsync(
             author: author?.trim() || 'Unknown',
             message: message?.trim() || 'Update file',
             date: date?.trim() || new Date().toISOString().slice(0, 10),
+            url: `https://github.com/commit/${shortHash}`,
           });
 
           // Check if commit message references PR using expanded patterns
@@ -128,18 +129,6 @@ export async function parseGitAsync(
         }
       } catch {
         // Ignore JSON parse error
-      }
-    }
-
-    // Fallback: If no PR numbers were matched, synthesize PR history entries from recent commits
-    if (prs.length === 0 && commits.length > 0) {
-      for (const c of commits) {
-        prs.push({
-          id: c.hash,
-          title: c.message,
-          author: c.author,
-          date: c.date,
-        });
       }
     }
 

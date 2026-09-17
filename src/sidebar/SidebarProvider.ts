@@ -1,4 +1,4 @@
-import { FileContext, PRInfo, RelatedTest, ADRWarning } from '../types';
+import { FileContext, PRInfo, CommitInfo, RelatedTest, ADRWarning } from '../types';
 
 export class SidebarProvider {
   private currentContext: FileContext | null = null;
@@ -45,24 +45,31 @@ export class SidebarProvider {
               ${ctx.prHistory
                 .map(
                   (pr: PRInfo) =>
-                    `<li><strong>${pr.id}:</strong> ${pr.title} <em>by ${pr.author} on ${pr.date}</em></li>`
+                    `<li><strong>${pr.id}:</strong> ${pr.title} <em>by ${pr.author} on ${pr.date}</em>${
+                      pr.url ? ` <a href="${pr.url}" target="_blank" class="inspect-link">View PR</a>` : ''
+                    }</li>`
                 )
                 .join('')}
             </ul>
           </div>`
-        : ctx.commitHistory && ctx.commitHistory.length > 0
+        : `<div class="card"><h4>PR History</h4><p class="muted">No linked PR found</p></div>`;
+
+    const commitsHtml =
+      ctx.commitHistory && ctx.commitHistory.length > 0
         ? `<div class="card">
-            <h4>PR & Commit History</h4>
+            <h4>File Commits</h4>
             <ul>
               ${ctx.commitHistory
                 .map(
-                  (c) =>
-                    `<li><strong>${c.hash}:</strong> ${c.message} <em>by ${c.author} on ${c.date}</em></li>`
+                  (c: CommitInfo) =>
+                    `<li><code>${c.hash}</code>: ${c.message} <em>by ${c.author} on ${c.date}</em> <a href="${
+                      c.url || `https://github.com/commit/${c.hash}`
+                    }" target="_blank" class="inspect-link">Inspect change</a></li>`
                 )
                 .join('')}
             </ul>
           </div>`
-        : `<div class="card"><h4>PR History</h4><p class="muted">No related PR history found.</p></div>`;
+        : `<div class="card"><h4>File Commits</h4><p class="muted">No commit history found.</p></div>`;
 
     const testsHtml =
       ctx.relatedTests && ctx.relatedTests.length > 0
@@ -112,6 +119,8 @@ export class SidebarProvider {
           li { margin-bottom: 4px; }
           .muted { color: #808080; font-style: italic; margin: 0; }
           code { background: #2d2d2d; padding: 2px 4px; border-radius: 3px; font-family: monospace; }
+          a.inspect-link { color: #3794ff; text-decoration: none; margin-left: 4px; font-size: 12px; }
+          a.inspect-link:hover { text-decoration: underline; }
         </style>
       </head>
       <body>
@@ -119,6 +128,7 @@ export class SidebarProvider {
         ${featureHtml}
         ${adrHtml}
         ${prHtml}
+        ${commitsHtml}
         ${testsHtml}
         ${astHtml}
       </body>
